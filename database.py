@@ -17,7 +17,6 @@ class Actions:
 
 class Base(DeclarativeBase):
     @classmethod
-    @cached_property
     def action(cls) -> Actions:
         table = cls.__tablename__
         return Actions(
