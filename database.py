@@ -4,9 +4,9 @@ from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
-engin = create_async_engine(settings.DATABASE_URL, echo=True)
+engine = create_async_engine(settings.DATABASE_URL, echo=True)
 
-SessionLocal = async_sessionmaker(engin)
+SessionLocal = async_sessionmaker(engine)
 
 @dataclass(frozen=True)
 class Actions:
