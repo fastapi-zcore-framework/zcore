@@ -1,5 +1,4 @@
 from dataclasses import dataclass
-from functools import cached_property
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
@@ -10,6 +9,7 @@ SessionLocal = async_sessionmaker(engine)
 
 @dataclass(frozen=True)
 class Actions:
+    LISTVIEW:str
     VIEW:str
     CREATE:str
     UPDATE:str
@@ -21,11 +21,11 @@ class Base(DeclarativeBase):
         table = cls.__tablename__
         return Actions(
             VIEW = f"{table}:view",
+            LISTVIEW = f"{table}:listview",
             CREATE = f"{table}:create",
             UPDATE = f"{table}:update",
             DELETE = f"{table}:delete"
         )
-
 
 async def get_db():
     db = SessionLocal()
