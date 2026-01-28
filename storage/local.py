@@ -2,6 +2,9 @@ import uuid
 from anyio import Path 
 import aiofiles
 
+from typing import Annotated
+from fastapi import Depends
+
 from app.core.config import settings
 
 from app.core.storage.base import StorageProvider
@@ -51,3 +54,5 @@ class LocalStorageProvider(StorageProvider):
             return True
         except Exception:
             return False
+        
+StorageProviderDep = Annotated[LocalStorageProvider, Depends()]
