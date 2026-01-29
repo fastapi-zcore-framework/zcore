@@ -1,6 +1,10 @@
 from jose import jwt, JWTError
 from passlib.context import CryptContext
 from datetime import datetime, timezone, timedelta
+
+from backend.app.modules.auth.repository import UserRepository
+from app.core.auth.models import Users
+from app.core.exception.exceptions import AuthError
 from app.core.config import settings
 
 pwd_context = CryptContext(schemes=['sha256_crypt'], deprecated='auto')
@@ -27,6 +31,28 @@ def decode_token(token: str) -> dict | None:
         return payload
     except JWTError:
         return None
+
+async def validate_token(repo: UserRepository, token:str, payload_type: str = "refresh") -> Users:
+    payload = decode_token(token)
+    if payload is None:
+        raise AuthError(message="Invalid token format")
+    
+    if payload.get("type") != payload_type :
+        raise AuthError(message="Invalid token type")
+
+    if is_token_expired(payload.get("exp")):
+        raise AuthError("Token expired")
+
+    username = payload.get("sub", None)
+    if not username:
+        raise AuthError(message="Invalid token subject")
+    
+    user = await repo.get_by_username(username)
+    
+    if not user:
+        raise AuthError(message="Invalid authentication credentials")
+    
+    return user
       
 def is_token_expired(token_exp: int) -> bool:
     """
