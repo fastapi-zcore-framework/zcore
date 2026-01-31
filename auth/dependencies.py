@@ -7,6 +7,8 @@ from app.core.auth.models import Users
 
 from app.core.exception.exceptions import AuthError, ForbiddenError
 
+from app.core.context import set_current_user_id, get_current_user_id
+
 from app.modules.auth.service import validate_token
 from app.modules.auth.repository import UserRepository, RoleRepository
 
@@ -23,7 +25,7 @@ async def get_current_user(repo: UserRepoDep, token:str = Depends(oauth2_scheme)
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Inactive user",
         )
-    
+    set_current_user_id(user.id)
     return user
 
 UserDep = Annotated[Users, Depends(get_current_user)]

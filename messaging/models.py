@@ -11,8 +11,8 @@ from sqlalchemy import String, DateTime, Integer, ForeignKey, Boolean, func
 from app.core.database import Base
 
 class Status(str, Enum):
-    Pending = "Pending"
     Processed = "Processed"
+    Pending = "Pending"
     Failed = "Failed"
 
 class OutboxEvent(Base):

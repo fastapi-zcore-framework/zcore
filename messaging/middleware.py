@@ -1,15 +1,16 @@
+import asyncio
+
 from fastapi import Request
 
 from starlette.middleware.base import BaseHTTPMiddleware
 
-from app.core.context import set_current_user_id
-from app.core.exception.exceptions import AppException
+from app.core.context import get_current_user_id
+from app.core.messaging.service import outbox_process
 
-class SetUserContextMiddleware(BaseHTTPMiddleware):
+class OutboxProcessorMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        if hasattr(request.state, "user"):
-            set_current_user_id(request.state.user.id)
-        try:
-            return await call_next(request)
-        except Exception as e:
-            raise AppException(message="Internal error when tring to set user context.")
+        response = await call_next(request)
+        user_id = get_current_user_id()
+        if 200 <= response.status_code < 300 and user_id:
+            asyncio.create_task(outbox_process(user_id))
+        return response

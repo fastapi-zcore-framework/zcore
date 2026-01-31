@@ -17,7 +17,7 @@ class OutboxEventCreate(BaseModel):
 class OutboxEventUpdate(BaseModel):
     status: Status
     processed_at: datetime
-    retry_count: int
+    retry_count: int | None = None
 
 class OutboxEventPublic(BaseModel):
     id: uuid.UUID

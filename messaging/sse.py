@@ -29,5 +29,6 @@ class StreamManager:
             try:
                 queue.put_nowait(data)
             except asyncio.QueueFull:
-                pass
+                self.unsubscribe(user_id, queue)
             
+stream_manager = StreamManager()
