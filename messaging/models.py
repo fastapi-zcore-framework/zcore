@@ -11,8 +11,8 @@ from sqlalchemy import String, DateTime, Integer, ForeignKey, Boolean, func
 from app.core.database import Base
 
 class Status(str, Enum):
-    Pending = "Pending"
     Processed = "Processed"
+    Pending = "Pending"
     Failed = "Failed"
 
 class OutboxEvent(Base):
@@ -28,7 +28,7 @@ class OutboxEvent(Base):
     
     event_type: Mapped[str] = mapped_column(String(255))
     
-    payload: Mapped[dict] = mapped_column(JSONB)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     before_state: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     
     status: Mapped[Status] = mapped_column(
