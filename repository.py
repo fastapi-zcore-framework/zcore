@@ -21,7 +21,7 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self.model = model
         self.db = db
         
-        self.pk = inspect(self.model).primary_key
+        self.pk = inspect(self.model).primary_key[0]
         
     async def get(self, id: Any) -> Optional[ModelType]:
         """Get a single record by ID."""
