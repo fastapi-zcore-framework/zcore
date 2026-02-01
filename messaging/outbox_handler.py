@@ -1,7 +1,26 @@
+import uuid
+from datetime import datetime, date
+from decimal import Decimal
+
 from sqlalchemy import inspect
 from sqlalchemy.orm import attributes
 
 from app.core.context import get_current_user_id
+
+def to_json_safe(value):
+    if value is None:
+        return None
+    if isinstance(value, uuid.UUID):
+        return str(value)
+    if isinstance(value, (datetime, date)):
+        return value.isoformat()
+    if isinstance(value, Decimal):
+        return float(value)
+    if isinstance(value, list):
+        return [to_json_safe(v) for v in value]
+    if isinstance(value, dict):
+        return {k: to_json_safe(v) for k, v in value.items()}
+    return value
 
 def extract_changes(obj):
     payload = {}
@@ -17,9 +36,11 @@ def extract_changes(obj):
         
         if history.has_changes():
             # values that are being added
-            payload[column] = history.added[0] if history.added else None
+            val_added = history.added[0] if history.added else None
+            payload[column] = to_json_safe(val_added)
             # values that are being replaced
-            before_state[column] = history.deleted[0] if history.deleted else None
+            val_deleted = history.deleted[0] if history.deleted else None
+            before_state[column] = to_json_safe(val_deleted)
             
     return payload, before_state
 
@@ -30,6 +51,9 @@ def handle_outbox_events(session, flush_context, instances):
     for obj in session.new.union(session.dirty).union(session.deleted):
         if isinstance(obj, OutboxEvent):
             continue
+        
+        if hasattr(obj, 'id') and obj.id is None:
+            obj.id = uuid.uuid4()
         
         state = inspect(obj)
         

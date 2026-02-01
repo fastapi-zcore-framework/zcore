@@ -8,7 +8,7 @@ from fastapi import Depends
 from app.core.config import settings
 
 from app.core.storage.base import StorageProvider
-from app.core.exceptions import AppException
+from app.core.exception.exceptions import AppException
 
 CHUNK_SIZE = 1024 * 1024
 

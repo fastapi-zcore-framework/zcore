@@ -36,7 +36,7 @@ class OutboxEvent(Base):
                 name="outbox_status",
                 native_enum=True),
         nullable=False,
-        default="Pending"
+        default=Status.Pending
     )
     
     created_at: Mapped[datetime] = mapped_column(DateTime, server_default=func.now())
@@ -44,7 +44,7 @@ class OutboxEvent(Base):
     
     retry_count: Mapped[int] = mapped_column(Integer, default=0)
     
-    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
     
 
 class NotificationType(str, Enum):
