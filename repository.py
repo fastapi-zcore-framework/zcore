@@ -1,6 +1,6 @@
 from typing import Generic ,TypeVar, Type, Any, Sequence, Optional
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.database import Base
@@ -21,9 +21,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self.model = model
         self.db = db
         
+        self.pk = inspect(self.model).primary_key[0]
+        
     async def get(self, id: Any) -> Optional[ModelType]:
         """Get a single record by ID."""
-        result = await self.db.execute(select(self.model).where(self.model.id == id))
+        result = await self.db.execute(select(self.model).where(self.pk == id))
         record = result.scalars().first()
         return record
     
