@@ -2,11 +2,10 @@ from jose import jwt, JWTError
 from passlib.context import CryptContext
 from datetime import datetime, timezone, timedelta
 
-from backend.app.modules.auth.repository import UserRepository
 from app.core.auth.models import Users
 from app.core.exception.exceptions import AuthError
 from app.core.config import settings
-
+    
 pwd_context = CryptContext(schemes=['sha256_crypt'], deprecated='auto')
 
 def verify_password(plain_password:str, hashed_password:str) -> bool:
@@ -32,7 +31,7 @@ def decode_token(token: str) -> dict | None:
     except JWTError:
         return None
 
-async def validate_token(repo: UserRepository, token:str, payload_type: str = "refresh") -> Users:
+async def validate_token(repo, token:str, payload_type: str = "refresh") -> Users:
     payload = decode_token(token)
     if payload is None:
         raise AuthError(message="Invalid token format")

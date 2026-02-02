@@ -7,9 +7,9 @@ from app.core.auth.models import Users
 
 from app.core.exception.exceptions import AuthError, ForbiddenError
 
-from app.core.context import set_current_user_id, get_current_user_id
+from app.core.context import set_current_user_id
 
-from app.modules.auth.service import validate_token
+from app.core.auth.security import validate_token
 from app.modules.auth.repository import UserRepository, RoleRepository
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
