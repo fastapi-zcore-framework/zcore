@@ -52,8 +52,14 @@ def handle_outbox_events(session, flush_context, instances):
         if isinstance(obj, OutboxEvent):
             continue
         
-        if hasattr(obj, 'id') and obj.id is None:
-            obj.id = uuid.uuid4()
+        mapper = inspect(obj).mapper
+        pk_column = mapper.primary_key[0].name
+        
+        current_pk_value = getattr(obj, pk_column)
+        if current_pk_value is None:
+            new_id = uuid.uuid4()
+            setattr(obj, pk_column, new_id)
+            current_pk_value = new_id
         
         state = inspect(obj)
         
@@ -70,7 +76,7 @@ def handle_outbox_events(session, flush_context, instances):
         
         new_event = OutboxEvent(
             aggregate_type=obj.__tablename__,
-            aggregate_id=obj.id,
+            aggregate_id=current_pk_value,
             event_type=f"{obj.__tablename__}:{action}",
             payload=payload,
             before_state=before_state,
