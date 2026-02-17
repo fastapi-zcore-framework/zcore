@@ -57,7 +57,6 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         for field, value in update_data.items():
             setattr(record, field, value)
             
-        self.db.add(record)
         await self.db.commit()
         await self.db.refresh(record)
         
