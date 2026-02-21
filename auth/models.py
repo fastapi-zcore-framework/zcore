@@ -50,7 +50,7 @@ class Users(Base):
     contact_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("contacts.id"), nullable=True)
     contact: Mapped["Contacts | None"] = relationship("Contacts", foreign_keys=[contact_id], lazy="selectin")
     
-    job_title_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalogitem.id"), nullable=True)
+    job_title_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("catalogitems.id"), nullable=True)
     job_title: Mapped["CatalogItems | None"] = relationship("CatalogItems", foreign_keys=[job_title_id], lazy="selectin")
     
     roles: Mapped[list["Roles"]] = relationship(secondary=user_roles, lazy="selectin", back_populates="users")
