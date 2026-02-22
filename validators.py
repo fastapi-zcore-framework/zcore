@@ -12,3 +12,8 @@ def validate_json_schema(data: dict, schema: dict):
             message=f"JSON Schema validation failed: {e.message}",
             payload={"path": list(e.path), "schema": e.schema}
         )
+    except jsonschema.exceptions.SchemaError as e:
+        raise ValidationError(
+            message="Internal System Error: The defined schema is corrupted or invalid.",
+            payload={"error": e.message}
+        )
