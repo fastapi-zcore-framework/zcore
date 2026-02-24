@@ -2,6 +2,7 @@ from typing import Generic ,TypeVar, Type, Any, Sequence, Optional
 from pydantic import BaseModel
 from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm.interfaces import ExecutableOption
 
 from app.core.database import Base
 
@@ -23,9 +24,12 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         
         self.pk = inspect(self.model).primary_key[0]
         
-    async def get(self, id: Any) -> Optional[ModelType]:
+    async def get(self, id: Any, options: list[ExecutableOption] = None) -> Optional[ModelType]:
         """Get a single record by ID."""
-        result = await self.db.execute(select(self.model).where(self.pk == id))
+        query = select(self.model).where(self.pk == id)
+        if options:
+            query = query.options(options)
+        result = await self.db.execute(query)
         record = result.scalars().first()
         return record
     
