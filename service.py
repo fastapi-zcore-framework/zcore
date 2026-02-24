@@ -1,4 +1,5 @@
 from typing import Generic ,TypeVar, Type, Any, Sequence, Optional
+from sqlalchemy.orm.interfaces import ExecutableOption
 from pydantic import BaseModel
 
 from app.core.repository import BaseRepository
@@ -32,8 +33,8 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.post_create(model=result)
         return result
     
-    async def get(self, id: Any) -> Optional[ModelType]:
-        result = await self.repository.get(id=id)
+    async def get(self, id: Any, options: list[ExecutableOption] = None) -> Optional[ModelType]:
+        result = await self.repository.get(id=id, options=options)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         result = await self.post_get(model=result)
