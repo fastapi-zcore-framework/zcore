@@ -1,18 +1,20 @@
-import jsonschema
-from jsonschema import validate
+from jsonschema import validate, Draft7Validator, exceptions
 from app.core.exception.exceptions import ValidationError
 
-def validate_json_schema(data: dict, schema: dict):
+def validate_json_schema(data: dict, schema: dict = None):
     if data is None:
         return
     try:
-        validate(instance=data, schema=schema)
-    except jsonschema.exceptions.ValidationError as e:
+        if schema is None:
+            Draft7Validator.check_schema(data)
+        else:
+            validate(instance=data, schema=schema)
+    except exceptions.ValidationError as e:
         raise ValidationError(
             message=f"JSON Schema validation failed: {e.message}",
             payload={"path": list(e.path), "schema": e.schema}
         )
-    except jsonschema.exceptions.SchemaError as e:
+    except exceptions.SchemaError as e:
         raise ValidationError(
             message="Internal System Error: The defined schema is corrupted or invalid.",
             payload={"error": e.message}
