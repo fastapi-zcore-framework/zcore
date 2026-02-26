@@ -28,7 +28,10 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         """Get a single record by ID."""
         query = select(self.model).where(self.pk == id)
         if options:
-            query = query.options(options)
+            if isinstance(options, list):
+                query = query.options(*options)
+            else:
+                query = query.options(options)
         result = await self.db.execute(query)
         record = result.scalars().first()
         return record
