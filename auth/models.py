@@ -1,11 +1,13 @@
 import uuid
 from typing import TYPE_CHECKING
 from datetime import datetime
+from enum import Enum
 
 from sqlalchemy import DateTime, Boolean, String, func, Table, Column, ForeignKey
 from sqlalchemy.dialects.postgresql import JSONB, ARRAY
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy.ext.hybrid import hybrid_property
+from sqlalchemy import Enum as SQLEnum
 
 from app.core.database import Base
 
@@ -21,6 +23,10 @@ user_roles = Table(
     Column("role_id",ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
 )
 
+class Gender(str, Enum):
+    Male = "Male"
+    Female = "Female"
+
 class Users(Base):
     __tablename__ = "users"
     
@@ -35,6 +41,7 @@ class Users(Base):
     
     first_name: Mapped[str] = mapped_column(String(50))
     last_name: Mapped[str] = mapped_column(String(75))
+    gender: Mapped[Gender] = mapped_column(SQLEnum(Gender, name="user_gender", native_enum=True), nullable=False)
     
     avatar_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True)
