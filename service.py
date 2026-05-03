@@ -27,9 +27,9 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def post_get(self, model: ModelType) -> ModelType: return model
     async def post_get_all(self, models: Sequence[ModelType]) -> Sequence[ModelType]: return models   
        
-    async def create(self, schema: CreateSchemaType) -> ModelType:
+    async def create(self, schema: CreateSchemaType, auto_commit: bool = True) -> ModelType:
         await self.pre_create(schema=schema)
-        result = await self.repository.create(schema=schema)
+        result = await self.repository.create(schema=schema, auto_commit=auto_commit)
         await self.post_create(model=result)
         return result
     
@@ -45,17 +45,17 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.post_get_all(models=result)
         return result
     
-    async def update(self, id: Any, schema: UpdateSchemaType) -> Optional[ModelType]:
+    async def update(self, id: Any, schema: UpdateSchemaType, auto_commit: bool = True) -> Optional[ModelType]:
         await self.pre_update(id=id, schema=schema)
-        result = await self.repository.update(id=id, schema=schema)
+        result = await self.repository.update(id=id, schema=schema, auto_commit=auto_commit)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         await self.post_update(model=result)
         return result
     
-    async def delete(self, id: Any) -> Optional[ModelType]:
+    async def delete(self, id: Any, auto_commit: bool = True) -> Optional[ModelType]:
         await self.pre_delete(id=id)
-        result = await self.repository.delete(id=id)
+        result = await self.repository.delete(id=id, auto_commit=auto_commit)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         await self.post_delete(id=id)
