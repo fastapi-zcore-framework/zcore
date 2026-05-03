@@ -42,17 +42,20 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         records = result.scalars().all()
         return records
     
-    async def create(self, schema: CreateSchemaType) -> ModelType:
+    async def create(self, schema: CreateSchemaType, auto_commit: bool = True) -> ModelType:
         """Create a new record."""
         new_record = self.model(**schema.model_dump())
 
         self.db.add(new_record)
-        await self.db.commit()
-        await self.db.refresh(new_record)
+        if auto_commit:
+            await self.db.commit()
+            await self.db.refresh(new_record)
+        else:
+            await self.db.flush() 
         
         return new_record
     
-    async def update(self, id:Any, schema: UpdateSchemaType) -> Optional[ModelType]:
+    async def update(self, id:Any, schema: UpdateSchemaType, auto_commit: bool = True) -> Optional[ModelType]:
         """Update an existing record by ID."""
         
         record = await self.get(id)
@@ -63,13 +66,16 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
 
         for field, value in update_data.items():
             setattr(record, field, value)
-            
-        await self.db.commit()
-        await self.db.refresh(record)
+
+        if auto_commit:
+            await self.db.commit()
+            await self.db.refresh(record)
+        else:
+            await self.db.flush() 
         
         return record
     
-    async def delete(self, id: Any) -> ModelType | None:
+    async def delete(self, id: Any, auto_commit: bool = True) -> ModelType | None:
         """Delete a record by ID."""
         
         record = await self.get(id)
@@ -77,7 +83,11 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             return None
         
         await self.db.delete(record)
-        await self.db.commit()
+        
+        if auto_commit:
+            await self.db.commit()
+        else:
+            await self.db.flush() 
         
         return record
         
