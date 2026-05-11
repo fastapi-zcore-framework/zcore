@@ -25,6 +25,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def post_delete(self, id: Any) -> None: pass
     
     async def post_get(self, model: ModelType) -> ModelType: return model
+    async def post_bulk_get(self, models: Sequence[ModelType]) -> Sequence[ModelType]: return models   
     async def post_get_all(self, models: Sequence[ModelType]) -> Sequence[ModelType]: return models   
        
     async def create(self, schema: CreateSchemaType, auto_commit: bool = True) -> ModelType:
@@ -43,6 +44,11 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def get_all(self, limit: int = 100, skip: int = 0) -> Sequence[ModelType]:
         result = await self.repository.get_all(skip=skip, limit=limit)
         result = await self.post_get_all(models=result)
+        return result
+
+    async def bulk_get(self, ids: list[any],  options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+        result = await self.repository.bulk_get(ids=ids, options=options)
+        result = await self.post_bulk_get(models=result)
         return result
     
     async def update(self, id: Any, schema: UpdateSchemaType, auto_commit: bool = True) -> Optional[ModelType]:
