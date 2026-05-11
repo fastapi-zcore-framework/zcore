@@ -15,12 +15,20 @@ if TYPE_CHECKING:
     from app.modules.personnel import UserHRProfile
     from app.modules.crm import Contacts
     from app.modules.catalog import CatalogItems
+    from app.modules.workflow import Stages 
 
 user_roles = Table(
     "user_roles",
     Base.metadata,
     Column("user_id",ForeignKey("users.id", ondelete="CASCADE"), primary_key=True),
     Column("role_id",ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+)
+
+role_stages = Table(
+    "role_stages",
+    Base.metadata, 
+    Column("role_id",ForeignKey("roles.id", ondelete="CASCADE"), primary_key=True),
+    Column("stage_id",ForeignKey("stages.id", ondelete="CASCADE"), primary_key=True),
 )
 
 class Gender(str, Enum):
@@ -92,4 +100,5 @@ class Roles(Base):
     ui_config: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     description: Mapped[str|None] = mapped_column(String(255), nullable=True)
     
+    stages: Mapped[list["Stages"] | None] = relationship(secondary=role_stages, back_populates="roles", lazy="selectin")
     users: Mapped[list["Users"]] = relationship(secondary=user_roles, back_populates="roles")
