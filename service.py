@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from app.core.repository import BaseRepository
 from app.core.exception.exceptions import EntityNotFound
 from app.core.database import Base
+from app.core.search import SearchRequest
  
 ModelType = TypeVar("ModelType", bound=Base)        
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -23,6 +24,9 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     
     async def pre_delete(self, id: Any) -> None: pass
     async def post_delete(self, id: Any) -> None: pass
+    
+    async def pre_search(self, search_in: SearchRequest) -> None: pass
+    async def post_search(self, models: Sequence[ModelType]) -> None: pass
     
     async def post_get(self, model: ModelType) -> ModelType: return model
     async def post_bulk_get(self, models: Sequence[ModelType]) -> Sequence[ModelType]: return models   
@@ -44,6 +48,12 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def get_all(self, limit: int = 100, skip: int = 0) -> Sequence[ModelType]:
         result = await self.repository.get_all(skip=skip, limit=limit)
         result = await self.post_get_all(models=result)
+        return result
+
+    async def search(self, search_in: SearchRequest) -> Sequence[ModelType]:
+        await self.pre_search(search_in)
+        result = await self.repository.search(search_in)
+        await self.post_search(result)
         return result
 
     async def bulk_get(self, ids: list[any],  options: list[ExecutableOption] = None) -> Sequence[ModelType]:
