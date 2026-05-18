@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
 
 from app.core.database import Base
+from app.core.search import SearchRequest
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -54,6 +55,14 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         records = result.scalars().all()
         return records
     
+    async def search(self, search_in: SearchRequest) -> Sequence[ModelType]:
+        from app.core.search import SearchEngine
+        engine = SearchEngine(self.model)
+        query = engine.build_query(search_in)
+        
+        result = await self.db.execute(query)
+        return result.scalars().all()
+     
     async def create(self, schema: CreateSchemaType, auto_commit: bool = True) -> ModelType:
         """Create a new record."""
         new_record = self.model(**schema.model_dump())
