@@ -36,6 +36,18 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         record = result.scalars().first()
         return record
     
+    async def bulk_get(self, ids: list[Any], options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+        """Get list of records by ids."""
+        query = select(self.model).where(self.pk.in_(ids))
+        if options:
+            if isinstance(options, list):
+                query = query.options(*options)
+            else:
+                query = query.options(options)
+        result = await self.db.execute(query)
+        record = result.scalars().all()
+        return record
+    
     async def get_all(self, skip: int = 0, limit: int = 100) -> Sequence[ModelType]:
         """Get all record with pagination."""
         result = await self.db.execute(select(self.model).offset(skip).limit(limit))
