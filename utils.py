@@ -3,6 +3,8 @@ import re
 from typing import Annotated
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import HttpUrl, PlainSerializer
+
 from app.core.database import get_db
 
 
@@ -14,3 +16,5 @@ def slugify(text: str) -> str:
     text = re.sub(r'[\s_-]+', '-', text)
     text = re.sub(r'^-+|-+$', '', text)
     return text
+
+SafeUrl = Annotated[HttpUrl, PlainSerializer(lambda v: str(v), return_type=str)]
