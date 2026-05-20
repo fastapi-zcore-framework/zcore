@@ -11,28 +11,25 @@ from app.core.config import settings
 
 event.listen(Session, "before_flush", handle_outbox_events)
 
-
-class ActionNamespace:
-    def __init__(self, table_name: str):
-        self._table_name = table_name
-
-    def __getattr__(self, item: str) -> str:
-        if item.isupper():
-            return f"{self._table_name}:{item.lower()}"
-        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
-
 @dataclass(frozen=True)
-class Actions(ActionNamespace):
+class Actions:
     LISTVIEW:str
     VIEW:str
     CREATE:str
     UPDATE:str
     DELETE:str
 
+    @classmethod
+    def actions(cls, t_name):
+        actions = {}
+        for action in cls.__dataclass_fields__.keys():
+            actions[action] = f"{t_name}:{action.lower()}"
+        return cls(**actions)
+
 class Base(DeclarativeBase):
     @classmethod
     def actions(cls) -> Actions: 
-        return Actions(cls.__tablename__)
+        return Actions.actions(cls.__tablename__)
 
 class DatabaseManager:
     def __init__(self, db_url: str):

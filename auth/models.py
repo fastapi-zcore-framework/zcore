@@ -91,7 +91,7 @@ class Users(Base):
     
     @classmethod
     def actions(cls) -> UserActions:
-        return UserActions(cls.__tablename__)
+        return UserActions.actions(cls.__tablename__)
     
 class Roles(Base):
     __tablename__ = "roles"
