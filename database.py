@@ -11,8 +11,18 @@ from app.core.config import settings
 
 event.listen(Session, "before_flush", handle_outbox_events)
 
+
+class ActionNamespace:
+    def __init__(self, table_name: str):
+        self._table_name = table_name
+
+    def __getattr__(self, item: str) -> str:
+        if item.isupper():
+            return f"{self._table_name}:{item.lower()}"
+        raise AttributeError(f"'{self.__class__.__name__}' object has no attribute '{item}'")
+
 @dataclass(frozen=True)
-class Actions:
+class Actions(ActionNamespace):
     LISTVIEW:str
     VIEW:str
     CREATE:str
@@ -21,15 +31,8 @@ class Actions:
 
 class Base(DeclarativeBase):
     @classmethod
-    def action(cls) -> Actions:
-        table = cls.__tablename__
-        return Actions(
-            VIEW = f"{table}:view",
-            LISTVIEW = f"{table}:listview",
-            CREATE = f"{table}:create",
-            UPDATE = f"{table}:update",
-            DELETE = f"{table}:delete"
-        )
+    def actions(cls) -> Actions: 
+        return Actions(cls.__tablename__)
 
 class DatabaseManager:
     def __init__(self, db_url: str):

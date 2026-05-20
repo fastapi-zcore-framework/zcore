@@ -11,6 +11,8 @@ from sqlalchemy import Enum as SQLEnum
 
 from app.core.database import Base
 
+from app.core.auth.actions import UserActions
+
 if TYPE_CHECKING:
     from app.modules.personnel import UserHRProfile
     from app.modules.crm import Contacts
@@ -86,6 +88,10 @@ class Users(Base):
             for scope in role.scopes:
                 user_scope.add(scope)
         return user_scope
+    
+    @classmethod
+    def actions(cls) -> UserActions:
+        return UserActions(cls.__tablename__)
     
 class Roles(Base):
     __tablename__ = "roles"
