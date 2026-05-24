@@ -1,4 +1,5 @@
 from jsonschema import validate, Draft7Validator, exceptions
+
 from app.core.exception.exceptions import ValidationError
 
 def validate_json_schema(data: dict, schema: dict = None):

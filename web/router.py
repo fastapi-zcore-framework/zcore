@@ -6,11 +6,11 @@ from typing import TypeVar, Generic, Type
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 
-from app.core.auth.dependencies import PermissionChecker
-from app.core.response import ResponseWrapper
-from app.core.search import SearchRequest
-from app.core.service import BaseService
-from app.core.database import Actions
+from app.core.security.permissions import PermissionChecker
+from app.core.web.response import ResponseWrapper
+from app.core.db.search import SearchRequest
+from app.core.db.service import BaseService
+from app.core.db.setup import Actions
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
