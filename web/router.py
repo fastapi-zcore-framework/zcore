@@ -6,11 +6,9 @@ from typing import TypeVar, Generic, Type
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 
-from app.core.security.permissions import PermissionChecker
 from app.core.web.response import ResponseWrapper
 from app.core.db.search import SearchRequest
 from app.core.db.service import BaseService
-from app.core.db.setup import Actions
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -26,45 +24,22 @@ class RouteKey(StrEnum):
     
 @dataclass(frozen=True, slots=True)
 class RouteSpec:
-    depends: tuple[str, ...] = ()
+    depends: tuple[Depends, ...] = ()
     response_model: type[BaseModel] | None = None
     status_code: int = status.HTTP_200_OK
     
 def crud_specs(response_model: type[BaseModel] | None) -> dict[RouteKey, RouteSpec]:
-    spec = RouteSpec(response_model=response_model)
     return {
-        RouteKey.POST: spec,
-        RouteKey.GET: spec,
-        RouteKey.GET_ALL: spec,
-        RouteKey.SEARCH: spec,
-        RouteKey.UPDATE: spec,
-        RouteKey.PATCH: spec,
-        RouteKey.DELETE: spec,
+        RouteKey.POST: RouteSpec(response_model=response_model, status_code=status.HTTP_201_CREATED),
+        RouteKey.GET: RouteSpec(response_model=response_model),
+        RouteKey.GET_ALL: RouteSpec(response_model=response_model),
+        RouteKey.SEARCH: RouteSpec(response_model=response_model),
+        RouteKey.UPDATE: RouteSpec(response_model=response_model),
+        RouteKey.PATCH: RouteSpec(response_model=response_model),
+        RouteKey.DELETE: RouteSpec(),
     }
 
-
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
-    """
-    ```
-    from app.core.test import BaseRouter, crud_specs
-    from app.modules.auth.service import RoleService
-
-    roles_router = BaseRouter(
-        specs=crud_specs(RolePublic),
-        create_schema= RoleCreate,
-        update_schema= RoleUpdate,
-        prefix="/roles",
-        tags=['Roles'],
-        service_dep= RoleService,
-    )
-
-    router.include_router(
-        roles_router.router,
-        prefix='/hr',
-        tags=['Roles']
-    )
-    ```
-    """
     def __init__(
         self,
         specs: dict[RouteKey, RouteSpec],
@@ -82,13 +57,9 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         self.create_schema = create_schema
         self.update_schema = update_schema
         self._register_routes()
-
-    def _get_deps(self, key: RouteKey) -> list[Depends]:
-        perms = self.specs[key].depends
-        if not perms:
-            return []
-        checker = PermissionChecker.required(perms)
-        return [Depends(checker)] if checker else []
+    
+    def _get_spec(self, key: RouteKey) -> RouteSpec:
+        return self.specs[key]
 
     def _register_routes(self):
         s_dep = self.service_dep
@@ -96,92 +67,129 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         u_schema = self.update_schema
 
         if RouteKey.POST not in self.exclude:
-            async def create_endpoint(data_in: c_schema, service: BaseService = Depends(s_dep)):
-                data = await service.create(data_in)
-                return ResponseWrapper(data=data)
+            spec = self._get_spec(RouteKey.POST)
+            async def _create_endpoint(data_in: c_schema, service: BaseService = Depends(s_dep)):
+                return await self.create_endpoint(data_in, service)
             
             self.router.add_api_route(
                 path="/",
-                endpoint=create_endpoint,
+                endpoint=_create_endpoint,
                 methods=["POST"],
-                dependencies=self._get_deps(RouteKey.POST),
-                response_model=ResponseWrapper[self.specs[RouteKey.POST].response_model]
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[spec.response_model]
             )
 
         if RouteKey.GET not in self.exclude:
-            async def get_endpoint(id: uuid.UUID, service: BaseService = Depends(s_dep)):
-                data = await service.get(id)
-                return ResponseWrapper(data=data)
+            spec = self._get_spec(RouteKey.GET)
+            async def _get_endpoint(id: uuid.UUID, service: BaseService = Depends(s_dep)):
+                return await self.get_endpoint(id, service)
 
             self.router.add_api_route(
                 path="/{id}",
-                endpoint=get_endpoint,
+                endpoint=_get_endpoint,
                 methods=["GET"],
-                dependencies=self._get_deps(RouteKey.GET),
-                response_model=ResponseWrapper[self.specs[RouteKey.GET].response_model]
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[spec.response_model]
             )
 
         if RouteKey.GET_ALL not in self.exclude:
-            async def get_all_endpoint(limit: int = 100, skip: int = 0, service: BaseService = Depends(s_dep)):
-                data = await service.get_all(limit=limit, skip=skip)
-                return ResponseWrapper(data=data, meta={"limit": limit, "skip": skip})
+            spec = self._get_spec(RouteKey.GET_ALL)
+            async def _get_all_endpoint(limit: int = 100, skip: int = 0, service: BaseService = Depends(s_dep)):
+                return await self.get_all_endpoint(limit, skip, service)
 
             self.router.add_api_route(
                 path="/",
-                endpoint=get_all_endpoint,
+                endpoint=_get_all_endpoint,
                 methods=["GET"],
-                dependencies=self._get_deps(RouteKey.GET_ALL),
-                response_model=ResponseWrapper[list[self.specs[RouteKey.GET_ALL].response_model]]
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[list[spec.response_model]]
             )
 
         if RouteKey.SEARCH not in self.exclude:
-            async def search_endpoint(search_in: SearchRequest, service: BaseService = Depends(s_dep)):
-                result = await service.search(search_in)
-                return ResponseWrapper(data=result)
+            spec = self._get_spec(RouteKey.SEARCH)
+            async def _search_endpoint(search_in: SearchRequest, service: BaseService = Depends(s_dep)):
+                return await self.search_endpoint(search_in, service)
 
             self.router.add_api_route(
                 path="/search",
-                endpoint=search_endpoint,
-                methods=["POST"], # جستجو با Body معمولاً POST است
-                dependencies=self._get_deps(RouteKey.SEARCH),
-                response_model=ResponseWrapper[list[self.specs[RouteKey.SEARCH].response_model]]
+                endpoint=_search_endpoint,
+                methods=["POST"],
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[list[spec.response_model]]
             )
 
         if RouteKey.UPDATE not in self.exclude:
-            async def update_endpoint(id: uuid.UUID, data_in: u_schema, service: BaseService = Depends(s_dep)):
-                data = await service.update(id, data_in)
-                return ResponseWrapper(data=data)
+            spec = self._get_spec(RouteKey.UPDATE)
+            async def _update_endpoint(id: uuid.UUID, data_in: u_schema, service: BaseService = Depends(s_dep)):
+                return await self.update_endpoint(id, data_in, service)
 
             self.router.add_api_route(
                 path="/{id}",
-                endpoint=update_endpoint,
+                endpoint=_update_endpoint,
                 methods=["PUT"],
-                dependencies=self._get_deps(RouteKey.UPDATE),
-                response_model=ResponseWrapper[self.specs[RouteKey.UPDATE].response_model]
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[spec.response_model]
             )
 
         if RouteKey.PATCH not in self.exclude:
-            async def patch_endpoint(id: uuid.UUID, data_in: u_schema, service: BaseService = Depends(s_dep)):
-                data = await service.update(id, data_in, auto_commit=False)
-                return ResponseWrapper(data=data)
-
+            spec = self._get_spec(RouteKey.PATCH)
+            async def _patch_endpoint(id: uuid.UUID, data_in: u_schema, service: BaseService = Depends(s_dep)):
+                return await self.patch_endpoint(id, data_in, service)
+                
             self.router.add_api_route(
                 path="/{id}",
-                endpoint=patch_endpoint,
+                endpoint=_patch_endpoint,
                 methods=["PATCH"],
-                dependencies=self._get_deps(RouteKey.PATCH),
-                response_model=ResponseWrapper[self.specs[RouteKey.PATCH].response_model]
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper[spec.response_model]
             )
 
         if RouteKey.DELETE not in self.exclude:
-            async def delete_endpoint(id: uuid.UUID, service: BaseService = Depends(s_dep)):
-                await service.delete(id)
-                return ResponseWrapper(message="Deleted successfully")
+            spec = self._get_spec(RouteKey.DELETE)
+            async def _delete_endpoint(id: uuid.UUID, service: BaseService = Depends(s_dep)):
+                return await self.delete_endpoint(id, service)
 
             self.router.add_api_route(
                 path="/{id}",
-                endpoint=delete_endpoint,
+                endpoint=_delete_endpoint,
                 methods=["DELETE"],
-                dependencies=self._get_deps(RouteKey.DELETE),
-                status_code=status.HTTP_200_OK
+                dependencies=list(spec.depends),
+                status_code=spec.status_code,
+                response_model=ResponseWrapper
             )
+            
+    async def create_endpoint(self, data_in: CreateSchemaType, service: BaseService) -> ResponseWrapper:
+        data = await service.create(data_in)
+        return ResponseWrapper(data=data)
+    
+    async def get_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
+        data = await service.get(id)
+        return ResponseWrapper(data=data)
+    
+    async def get_all_endpoint(self, limit: int, skip: int, service: BaseService) -> ResponseWrapper:
+        data = await service.get_all(limit=limit, skip=skip)
+        return ResponseWrapper(data=data, meta={"limit": limit, "skip": skip})
+    
+    async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
+        result = await service.search(search_in)
+        return ResponseWrapper(data=result)
+    
+    async def update_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
+        data = await service.update(id, data_in)
+        return ResponseWrapper(data=data)
+    
+    async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
+        data = await service.update(id, data_in, auto_commit=False)
+        return ResponseWrapper(data=data)
+    
+    async def delete_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
+        await service.delete(id)
+        return ResponseWrapper(message="Deleted successfully")
+    
+    
