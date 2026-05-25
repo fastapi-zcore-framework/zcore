@@ -1,4 +1,5 @@
 from typing import Protocol, runtime_checkable
+from fastapi import FastAPI
 
 @runtime_checkable
 class Plugin(Protocol):
@@ -6,6 +7,7 @@ class Plugin(Protocol):
     version: str
     dependencies: list[str] = []
 
+    def setup(self, app: FastAPI) -> None: ...
     async def on_init(self) -> None: ...
     async def on_startup(self) -> None: ...
     async def on_ready(self) -> None: ...
