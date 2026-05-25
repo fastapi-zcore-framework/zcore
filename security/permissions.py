@@ -1,12 +1,16 @@
 from fastapi import Request, Depends
+from typing import Annotated
+
 from app.core.exception.exceptions import ForbiddenError, AuthError
 from app.core.db.protocols import UserProtocol
+
+from app.modules.auth.dependencies import get_current_user
 
 class PermissionChecker:
     def __init__(self, required_scopes: list[str]):
         self.required_scopes = required_scopes
         
-    async def __call__(self, request: Request, user: UserProtocol): 
+    async def __call__(self, request: Request, user: Annotated[UserProtocol, Depends(get_current_user)]): 
         if not user:
             raise AuthError(message="Authentication required")
         
