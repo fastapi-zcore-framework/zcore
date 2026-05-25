@@ -1,10 +1,11 @@
 from __future__ import annotations
-import uuid
-from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable, Sequence
+
+from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable
 from pydantic import BaseModel, Field
 from sqlalchemy import select, asc, desc, inspect, or_, and_
 from sqlalchemy.orm import joinedload, selectinload
-from app.core.database import Base
+
+from app.core.db.setup import Base
 
 ModelType = TypeVar("ModelType", bound=Base)
 

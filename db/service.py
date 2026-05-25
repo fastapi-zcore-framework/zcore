@@ -2,10 +2,10 @@ from typing import Generic ,TypeVar, Type, Any, Sequence, Optional
 from sqlalchemy.orm.interfaces import ExecutableOption
 from pydantic import BaseModel
 
-from app.core.repository import BaseRepository
+from app.core.db.repository import BaseRepository
 from app.core.exception.exceptions import EntityNotFound
-from app.core.database import Base
-from app.core.search import SearchRequest
+from app.core.db.setup import Base
+from app.core.db.search import SearchRequest
  
 ModelType = TypeVar("ModelType", bound=Base)        
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)

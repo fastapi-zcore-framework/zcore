@@ -4,8 +4,8 @@ from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
 
-from app.core.database import Base
-from app.core.search import SearchRequest
+from app.core.db.setup import Base
+from app.core.db.search import SearchRequest, SearchEngine
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -56,7 +56,6 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         return records
     
     async def search(self, search_in: SearchRequest) -> Sequence[ModelType]:
-        from app.core.search import SearchEngine
         engine = SearchEngine(self.model)
         query = engine.build_query(search_in)
         
