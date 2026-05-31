@@ -6,6 +6,8 @@ from sqlalchemy import select, asc, desc, inspect, or_, and_
 from sqlalchemy.orm import joinedload, selectinload
 
 from app.core.db.setup import Base
+from app.core.context.context import get_restricted_fields
+from app.core.exception.exceptions import ValidationError, ForbiddenError
 
 ModelType = TypeVar("ModelType", bound=Base)
 
@@ -35,6 +37,66 @@ class SearchEngine:
     def register_handler(self, field_name: str, handler: Callable[[Any], Any]):
         self.custom_handlers[field_name] = handler
         return self
+
+    def _is_restricted(self, field_name: str, restricted_set: set[str]) -> bool:
+        if not restricted_set:
+            return False
+        normalized_name = field_name.replace("resource.", "")
+        return (
+            field_name in restricted_set or 
+            f"resource.{field_name}" in restricted_set or 
+            normalized_name in restricted_set
+        )
+
+    def _validate_request(self, search_in: SearchRequest, max_depth: int = 3) -> None:
+        restricted = get_restricted_fields() or set()
+        valid_columns = {col.key for col in self.mapper.columns}
+        
+        if search_in.include:
+            for path in search_in.include:
+                parts = path.split(".")
+                for part in parts:
+                    if self._is_restricted(part, restricted):
+                        raise ForbiddenError(message=f"Access to relation or field '{part}' is restricted.")
+                
+                current_model = self.model
+                for part in parts:
+                    rel = inspect(current_model).relationships.get(part)
+                    if not rel:
+                        raise ValidationError(message=f"Invalid include relation path: '{path}'")
+                    current_model = rel.mapper.class_
+
+        if search_in.sort:
+            for s in search_in.sort:
+                if s.field not in valid_columns:
+                    raise ValidationError(message=f"Invalid sort field: '{s.field}' on {self.model.__name__}")
+                if self._is_restricted(s.field, restricted):
+                    raise ForbiddenError(message=f"Sorting by restricted field '{s.field}' is forbidden.")
+
+        if search_in.filters:
+            self._validate_filters_recursive(search_in.filters, valid_columns, restricted, current_depth=1, max_depth=max_depth)
+
+    def _validate_filters_recursive(
+        self, 
+        filters: List[FilterItem], 
+        valid_columns: set[str], 
+        restricted: set[str], 
+        current_depth: int, 
+        max_depth: int
+    ) -> None:
+        if current_depth > max_depth:
+            raise ValidationError(message="Search query filter structure is too complex.")
+
+        for f in filters:
+            if f.op in ["or", "and"]:
+                if f.items:
+                    self._validate_filters_recursive(f.items, valid_columns, restricted, current_depth + 1, max_depth)
+            else:
+                if f.field:
+                    if f.field not in valid_columns:
+                        raise ValidationError(message=f"Invalid filter field: '{f.field}' on {self.model.__name__}")
+                    if self._is_restricted(f.field, restricted):
+                        raise ForbiddenError(message=f"Filtering by restricted field '{f.field}' is forbidden.")
 
     def _get_operator_expression(self, f: FilterItem):
         if f.op in ["or", "and"] and f.items:
@@ -82,6 +144,8 @@ class SearchEngine:
         return query
 
     def build_query(self, search_in: SearchRequest):
+        self._validate_request(search_in)
+
         query = select(self.model)
         
         if search_in.include:
