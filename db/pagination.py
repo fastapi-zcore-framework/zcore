@@ -1,8 +1,11 @@
+import uuid
 import math
 import base64
 import json
 
 from typing import Any, Sequence, TypeVar, Generic, Optional, Type, Literal
+from datetime import datetime
+from sqlalchemy.sql.sqltypes import DateTime
 from pydantic import BaseModel, Field
 
 from sqlalchemy import select, func, and_, or_, inspect
@@ -125,9 +128,13 @@ class CursorPagination(BasePagination[T]):
         if cursor_data:
             val = cursor_data["value"]
             last_id = cursor_data["id"]
+            
+            if isinstance(last_id, str):
+                try:
+                    last_id = uuid.UUID(last_id)
+                except ValueError:
+                    pass
 
-            from datetime import datetime
-            from sqlalchemy.sql.sqltypes import DateTime
             if isinstance(col.type, DateTime) and isinstance(val, str):
                 try:
                     val = datetime.fromisoformat(val)

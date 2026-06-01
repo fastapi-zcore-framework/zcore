@@ -134,11 +134,12 @@ class SearchEngine:
                 rel = inspect(current_model).relationships.get(part)
                 if not rel: break
                 
-                load_method = selectinload if rel.uselist else joinedload
+                load_method_name = selectinload if rel.uselist else joinedload
                 if i == 0:
-                    loader = load_method(getattr(current_model, part))
+                    load_func = selectinload if rel.uselist else joinedload
+                    loader = load_func(getattr(current_model, part))
                 else:
-                    loader = loader.options(load_method(getattr(current_model, part)))
+                    loader = getattr(loader, load_method_name)(getattr(current_model, part))
                 
                 current_model = rel.mapper.class_
             
