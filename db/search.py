@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable
 from pydantic import BaseModel, Field
+
 from sqlalchemy import select, asc, desc, inspect, or_, and_
 from sqlalchemy.orm import joinedload, selectinload
 
@@ -27,6 +28,8 @@ class SearchRequest(BaseModel):
     sort: Optional[List[SortItem]] = []
     limit: int = Field(default=100, le=500)
     skip: int = 0
+    page: Optional[int] = None
+    cursor: Optional[str] = None
 
 class SearchEngine:
     def __init__(self, model: Type[ModelType]):
@@ -143,9 +146,7 @@ class SearchEngine:
                 query = query.options(loader)
         return query
 
-    def build_query(self, search_in: SearchRequest):
-        self._validate_request(search_in)
-
+    def build_base_query(self, search_in: SearchRequest):
         query = select(self.model)
         
         if search_in.include:
@@ -163,4 +164,8 @@ class SearchEngine:
                 if col:
                     query = query.order_by(asc(col) if s.order == "asc" else desc(col))
 
+        return query
+
+    def build_query(self, search_in: SearchRequest):
+        query = self.build_base_query(search_in)
         return query.offset(search_in.skip).limit(search_in.limit)
