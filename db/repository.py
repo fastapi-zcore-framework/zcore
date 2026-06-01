@@ -7,6 +7,14 @@ from sqlalchemy.orm.interfaces import ExecutableOption
 from app.core.db.setup import Base
 from app.core.db.search import SearchRequest, SearchEngine
 
+from app.core.db.pagination import (
+    PaginatedResult, 
+    PageNumberPagination, 
+    CursorPagination, 
+    PageNumberParams, 
+    CursorParams
+)
+
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -24,7 +32,48 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         self.db = db
         
         self.pk = inspect(self.model).primary_key[0]
+        self.cursor_field = self.pk.name
         
+    async def paginate(self, params: Any) -> PaginatedResult[ModelType]:
+        query = select(self.model)
+        
+        if isinstance(params, CursorParams):
+            paginator = CursorPagination(cursor_field=self.cursor_field)
+        else:
+            paginator = PageNumberPagination()
+            
+        return await paginator.paginate(
+            session=self.db,
+            query=query,
+            params=params,
+            model=self.model
+        )
+    
+    async def search_paginated(self, search_in: SearchRequest) -> PaginatedResult[ModelType]:
+        if search_in.cursor is not None:
+            params = CursorParams(
+                cursor=search_in.cursor,
+                size=search_in.limit
+            )
+            paginator = CursorPagination(cursor_field=self.cursor_field)
+        else:
+            params = PageNumberParams(
+                page=search_in.page or 1,
+                size=search_in.limit
+            )
+            paginator = PageNumberPagination()
+
+        engine = SearchEngine(self.model)
+        engine._validate_request(search_in)
+        query = engine.build_base_query(search_in)
+        
+        return await paginator.paginate(
+            session=self.db,
+            query=query,
+            params=params,
+            model=self.model
+        )
+    
     async def get(self, id: Any, options: list[ExecutableOption] = None) -> Optional[ModelType]:
         """Get a single record by ID."""
         query = select(self.model).where(self.pk == id)

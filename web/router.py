@@ -10,7 +10,7 @@ from app.core.web.response import ResponseWrapper
 
 from app.core.db.search import SearchRequest
 from app.core.db.service import BaseService
-from app.core.db.pagination import BasePagination, PageNumberParams, CursorParams
+from app.core.db.pagination import PaginatedResult, BasePagination
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -187,49 +187,16 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return ResponseWrapper(data=data, meta={"limit": limit, "skip": skip})
 
     async def get_all_endpoint_paginated(self, params: Any, service: BaseService) -> ResponseWrapper:
-        from sqlalchemy import select
-        paginator = self.pagination_class()
-        query = select(service.model)
-        paginated_result = await paginator.paginate(
-            session=service.repository.db,
-            query=query,
-            params=params,
-            model=service.model
-        )
-        paginated_result.data = await service.post_get_all(paginated_result.data)
+        paginated_result = await service.get_all_paginated(params)
         return ResponseWrapper(data=paginated_result.data, meta=paginated_result.meta)
     
     async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
-        if self.pagination_class:
-            paginator = self.pagination_class()
-            params_class = self.pagination_class.params_class
-            
-            if params_class == PageNumberParams:
-                params = PageNumberParams(
-                    page=search_in.page or 1,
-                    size=search_in.limit
-                )
-            else:
-                params = CursorParams(
-                    cursor=search_in.cursor,
-                    size=search_in.limit
-                )
-                
-            from app.core.db.search import SearchEngine
-            engine = SearchEngine(service.model)
-            engine._validate_request(search_in)
-            
-            query = engine.build_base_query(search_in)
-            paginated_result = await paginator.paginate(
-                session=service.repository.db,
-                query=query,
-                params=params,
-                model=service.model
-            )
-            paginated_result.data = await service.post_get_all(paginated_result.data)
-            return ResponseWrapper(data=paginated_result.data, meta=paginated_result.meta)
-
-        result = await service.search(search_in)
+        is_paginated = self.pagination_class is not None
+        
+        result = await service.search(search_in, is_paginated=is_paginated)
+        
+        if isinstance(result, PaginatedResult):
+            return ResponseWrapper(data=result.data, meta=result.meta)
         return ResponseWrapper(data=result)
     
     async def update_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:

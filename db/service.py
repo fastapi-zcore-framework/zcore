@@ -2,9 +2,11 @@ from typing import Generic ,TypeVar, Type, Any, Sequence, Optional
 from sqlalchemy.orm.interfaces import ExecutableOption
 from pydantic import BaseModel
 
-from app.core.db.repository import BaseRepository
 from app.core.exception.exceptions import EntityNotFound
+
 from app.core.db.setup import Base
+from app.core.db.pagination import PaginatedResult
+from app.core.db.repository import BaseRepository
 from app.core.db.search import SearchRequest
  
 ModelType = TypeVar("ModelType", bound=Base)        
@@ -38,6 +40,11 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.post_create(model=result)
         return result
     
+    async def get_all_paginated(self, params: Any) -> PaginatedResult[ModelType]:
+        paginated_result = await self.repository.paginate(params)
+        paginated_result.data = await self.post_get_all(paginated_result.data)
+        return paginated_result
+    
     async def get(self, id: Any, options: list[ExecutableOption] = None) -> Optional[ModelType]:
         result = await self.repository.get(id=id, options=options)
         if not result:
@@ -50,8 +57,15 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.post_get_all(models=result)
         return result
 
-    async def search(self, search_in: SearchRequest) -> Sequence[ModelType]:
+    async def search(self, search_in: SearchRequest, is_paginated: bool = False) -> Sequence[ModelType] | PaginatedResult[ModelType]:
         await self.pre_search(search_in)
+        
+        if is_paginated:
+            paginated_result = await self.repository.search_paginated(search_in)
+            paginated_result.data = await self.post_get_all(paginated_result.data)
+            await self.post_search(paginated_result.data)
+            return paginated_result
+
         result = await self.repository.search(search_in)
         await self.post_search(result)
         return result
