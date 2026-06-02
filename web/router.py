@@ -5,6 +5,7 @@ from enum import StrEnum
 from typing import TypeVar, Generic, Type, Any
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
+from fastapi.routing import APIRoute
 
 from app.core.web.response import ResponseWrapper
 
@@ -52,8 +53,9 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         tags: list[str] = None,
         exclude: set[RouteKey] | None = None,
         pagination_class: Type[BasePagination] | None = None,
+        route_class: Type[APIRoute] | None = None,
     ):       
-        self.router = APIRouter(prefix=prefix, tags=tags or [])
+        self.router = APIRouter(prefix=prefix, tags=tags or [], route_class=route_class)
         self.specs = specs
         self.exclude = exclude or set()
         self.service_dep = service_dep
