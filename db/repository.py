@@ -159,4 +159,15 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             await self.db.flush() 
         
         return record
+    
+    async def commit(self):
+        await self.db.commit()
+
+    async def rollback(self):
+        await self.db.rollback()
+
+    async def refresh(self, instance: Any):
+        await self.db.refresh(instance)
         
+    async def flush(self):
+        await self.db.flush()
