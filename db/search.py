@@ -101,6 +101,11 @@ class SearchEngine:
                     if self._is_restricted(f.field, restricted):
                         raise ForbiddenError(message=f"Filtering by restricted field '{f.field}' is forbidden.")
 
+    def _escape_like_wildcards(val: Any) -> str:
+        if not isinstance(val, str):
+            return str(val)
+        return val.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+    
     def _get_operator_expression(self, f: FilterItem):
         if f.op in ["or", "and"] and f.items:
             sub_exprs = [self._get_operator_expression(item) for item in f.items]
@@ -119,10 +124,15 @@ class SearchEngine:
         if f.op == "lt": return col < f.value
         if f.op == "ge": return col >= f.value
         if f.op == "le": return col <= f.value
-        if f.op == "ilike": return col.ilike(f"%{f.value}%")
+
+        if f.op == "ilike": 
+            escaped_value = self._escape_like_wildcards(f.value)
+            return col.ilike(f"%{escaped_value}%", escape="\\")
+            
         if f.op == "in": return col.in_(f.value if isinstance(f.value, (list, tuple)) else [f.value])
         if f.op == "is_null": return col.is_(None) if f.value else col.isnot(None)
         return None
+
 
     def _apply_includes(self, query, include_paths: List[str]):
         for path in include_paths:

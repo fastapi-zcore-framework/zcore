@@ -1,9 +1,12 @@
+import re
 import uuid
 import time
 import structlog
 from starlette.types import ASGIApp, Scope, Receive, Send
 
 log = structlog.get_logger()
+
+REQUEST_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-\.\_\:]{8,64}$")
 
 class RequestLogMiddleware:
     def __init__(self, app: ASGIApp):
@@ -18,7 +21,12 @@ class RequestLogMiddleware:
         structlog.contextvars.clear_contextvars()
         
         headers = dict(scope.get("headers", []))
-        request_id = headers.get(b"x-request-id", b"").decode() or str(uuid.uuid4())
+        raw_request_id  = headers.get(b"x-request-id", b"").decode("utf-8", errors="ignore").strip()
+        
+        if raw_request_id and REQUEST_ID_PATTERN.match(raw_request_id):
+            request_id = raw_request_id
+        else:
+            request_id = str(uuid.uuid4())
         
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
