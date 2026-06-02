@@ -1,5 +1,6 @@
+import jwt
 from datetime import datetime, timezone, timedelta
-from jose import jwt, JWTError
+
 from app.core.config import settings
 from app.core.exception.exceptions import AuthError
 
@@ -12,8 +13,10 @@ def create_token(data: dict, expires_delta: timedelta | None = None) -> str:
 def decode_token(token: str) -> dict:
     try:
         return jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
-    except JWTError:
-        raise AuthError(message="Invalid or expired token")
+    except jwt.ExpiredSignatureError:
+        raise AuthError(message="Token expired")
+    except jwt.InvalidTokenError:
+        raise AuthError(message="Invalid token structure")
     
 def is_token_expired(token_exp: int) -> bool:   
     if not token_exp:
