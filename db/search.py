@@ -51,12 +51,32 @@ class SearchEngine:
             normalized_name in restricted_set
         )
 
+    def _is_path_restricted(self, path: str, restricted_set: set[str]) -> bool:
+        if not restricted_set:
+            return False
+        
+        normalized_path = path.replace("resource.", "")
+        for restricted in restricted_set:
+            normalized_restricted = restricted.replace("resource.", "")
+            
+            if normalized_path == normalized_restricted:
+                return True
+            if normalized_restricted.startswith(normalized_path + "."):
+                return True
+            if normalized_path.startswith(normalized_restricted + "."):
+                return True
+                
+        return False
+ 
     def _validate_request(self, search_in: SearchRequest, max_depth: int = 3) -> None:
         restricted = get_restricted_fields() or set()
         valid_columns = {col.key for col in self.mapper.columns}
         
         if search_in.include:
             for path in search_in.include:
+                if self._is_path_restricted(path, restricted):
+                    raise ForbiddenError(message=f"Access to relation path '{path}' is restricted due to security policies.")
+                
                 parts = path.split(".")
                 for part in parts:
                     if self._is_restricted(part, restricted):

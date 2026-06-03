@@ -2,7 +2,10 @@ import re
 import uuid
 import time
 import structlog
+
 from starlette.types import ASGIApp, Scope, Receive, Send
+
+from app.core.context.context import _current_user_id, _restricted_fields
 
 log = structlog.get_logger()
 
@@ -19,6 +22,10 @@ class RequestLogMiddleware:
 
         s_time = time.perf_counter()
         structlog.contextvars.clear_contextvars()
+        
+        
+        user_id_token = _current_user_id.set(None)
+        restricted_fields_token = _restricted_fields.set(None)
         
         headers = dict(scope.get("headers", []))
         raw_request_id  = headers.get(b"x-request-id", b"").decode("utf-8", errors="ignore").strip()
@@ -56,3 +63,6 @@ class RequestLogMiddleware:
                 duration_ms=round(duration, 2),
             )
             raise
+        finally:
+            _current_user_id.reset(user_id_token)
+            _restricted_fields.reset(restricted_fields_token)
