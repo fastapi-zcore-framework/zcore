@@ -53,7 +53,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         tags: list[str] = None,
         exclude: set[RouteKey] | None = None,
         pagination_class: Type[BasePagination] | None = None,
-        route_class: Type[APIRoute] | None = None,
+        route_class: Type[APIRoute] = APIRoute,
     ):       
         self.router = APIRouter(prefix=prefix, tags=tags or [], route_class=route_class)
         self.specs = specs
