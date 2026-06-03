@@ -131,6 +131,26 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not record:
             return None 
         
+        update_data = schema.model_dump(exclude_unset=False)
+
+        for field, value in update_data.items():
+            setattr(record, field, value)
+
+        if auto_commit:
+            await self.db.commit()
+            await self.db.refresh(record)
+        else:
+            await self.db.flush() 
+        
+        return record
+    
+    async def patch(self, id:Any, schema: UpdateSchemaType, auto_commit: bool = True) -> Optional[ModelType]:
+        """Update an existing record by ID."""
+        
+        record = await self.get(id)
+        if not record:
+            return None 
+        
         update_data = schema.model_dump(exclude_unset=True)
 
         for field, value in update_data.items():

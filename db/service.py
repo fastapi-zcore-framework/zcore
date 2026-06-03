@@ -24,6 +24,9 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def pre_update(self, id: Any, schema: UpdateSchemaType) -> None: pass
     async def post_update(self, model: ModelType) -> None: pass
     
+    async def pre_patch(self, id: Any, schema: UpdateSchemaType) -> None: pass
+    async def post_patch(self, model: ModelType) -> None: pass
+    
     async def pre_delete(self, id: Any) -> None: pass
     async def post_delete(self, id: Any) -> None: pass
     
@@ -81,6 +84,14 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         await self.post_update(model=result)
+        return result
+    
+    async def patch(self, id: Any, schema: UpdateSchemaType, auto_commit: bool = True) -> Optional[ModelType]:
+        await self.pre_patch(id=id, schema=schema)
+        result = await self.repository.patch(id=id, schema=schema, auto_commit=auto_commit)
+        if not result:
+            raise EntityNotFound(message=f"{self.model.__name__} not found.")
+        await self.post_patch(model=result)
         return result
     
     async def delete(self, id: Any, auto_commit: bool = True) -> Optional[ModelType]:

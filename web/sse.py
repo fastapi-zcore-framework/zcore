@@ -95,7 +95,7 @@ class StreamManager:
         if not queues:
             return
         
-        for queue in queues:
+        for queue in list(queues):
             try:
                 queue.put_nowait(data)
             except asyncio.QueueFull:

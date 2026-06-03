@@ -206,7 +206,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return ResponseWrapper(data=data)
     
     async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
-        data = await service.update(id, data_in)
+        data = await service.patch(id, data_in)
         return ResponseWrapper(data=data)
     
     async def delete_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
