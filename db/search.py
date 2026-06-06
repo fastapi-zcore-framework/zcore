@@ -1,4 +1,7 @@
 from __future__ import annotations
+import uuid
+
+from datetime import datetime, date
 
 from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable
 from pydantic import BaseModel, Field
@@ -99,6 +102,26 @@ class SearchEngine:
         if search_in.filters:
             self._validate_filters_recursive(search_in.filters, valid_columns, restricted, current_depth=1, max_depth=max_depth)
 
+    def _validate_filter_field(self, field_path: str, restricted: set[str]) -> None:
+        parts = field_path.split(".")
+        current_model = self.model
+        
+        for i, part in enumerate(parts):
+            if self._is_restricted(part, restricted):
+                raise ForbiddenError(message=f"Filtering by restricted field or relation '{part}' is forbidden.")
+            
+            if i == len(parts) - 1:
+                # Last part must be a valid column on the current model
+                valid_columns = {col.key for col in inspect(current_model).columns}
+                if part not in valid_columns:
+                    raise ValidationError(message=f"Invalid filter field: '{part}' on {current_model.__name__}")
+            else:
+                # Intermediate parts must be valid relationships
+                rel = inspect(current_model).relationships.get(part)
+                if not rel:
+                    raise ValidationError(message=f"Invalid filter relation: '{part}' on {current_model.__name__}")
+                current_model = rel.mapper.class_
+
     def _validate_filters_recursive(
         self, 
         filters: List[FilterItem], 
@@ -116,11 +139,9 @@ class SearchEngine:
                     self._validate_filters_recursive(f.items, valid_columns, restricted, current_depth + 1, max_depth)
             else:
                 if f.field:
-                    if f.field not in valid_columns:
-                        raise ValidationError(message=f"Invalid filter field: '{f.field}' on {self.model.__name__}")
-                    if self._is_restricted(f.field, restricted):
-                        raise ForbiddenError(message=f"Filtering by restricted field '{f.field}' is forbidden.")
+                    self._validate_filter_field(f.field, restricted)
 
+    @staticmethod
     def _escape_like_wildcards(val: Any) -> str:
         if not isinstance(val, str):
             return str(val)
@@ -135,24 +156,86 @@ class SearchEngine:
         if f.field in self.custom_handlers:
             return self.custom_handlers[f.field](f.value)
 
-        col = getattr(self.model, f.field, None)
-        if col is None: return None
+        if not f.field:
+            return None
 
-        if f.op == "eq": return col == f.value
-        if f.op == "ne": return col != f.value
-        if f.op == "gt": return col > f.value
-        if f.op == "lt": return col < f.value
-        if f.op == "ge": return col >= f.value
-        if f.op == "le": return col <= f.value
+        return self._build_expression_for_field(self.model, f.field, f.op, f.value)
 
-        if f.op == "ilike": 
-            escaped_value = self._escape_like_wildcards(f.value)
+    def _build_expression_for_field(self, current_model: Any, field_path: str, op: str, value: Any) -> Any:
+        parts = field_path.split(".")
+        current_mapper = inspect(current_model)
+
+        if len(parts) == 1:
+            col = getattr(current_model, parts[0], None)
+            if col is None:
+                return None
+            return self._compare_column(col, op, value)
+
+        # It's a relationship
+        rel_name = parts[0]
+        rel = current_mapper.relationships.get(rel_name)
+        if not rel:
+            return None
+
+        target_model = rel.mapper.class_
+        remaining_path = ".".join(parts[1:])
+
+        sub_expr = self._build_expression_for_field(target_model, remaining_path, op, value)
+        if sub_expr is None:
+            return None
+
+        rel_attr = getattr(current_model, rel_name)
+        if rel.uselist:
+            return rel_attr.any(sub_expr)
+        else:
+            return rel_attr.has(sub_expr)
+
+    def _coerce_value(self, col: Any, value: Any) -> Any:
+        if value is None:
+            return value
+            
+        if isinstance(value, (list, tuple)):
+            return [self._coerce_value(col, v) for v in value]
+
+        try:
+            python_type = col.type.python_type
+            
+            if python_type is date and isinstance(value, str):
+                return date.fromisoformat(value.split("T")[0])
+                
+            if python_type is datetime and isinstance(value, str):
+                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                
+            if python_type is uuid.UUID and isinstance(value, str):
+                return uuid.UUID(value)
+                
+            if python_type is bool and isinstance(value, str):
+                return value.lower() in ("true", "1", "yes", "t", "y")
+                
+        except (NotImplementedError, AttributeError, ValueError, TypeError):
+            pass
+
+        return value
+    
+    def _compare_column(self, col: Any, op: str, value: Any) -> Any:
+        if op == "is_null": return col.is_(None) if value else col.isnot(None)
+
+        if op == "ilike": 
+            escaped_value = self._escape_like_wildcards(value)
             return col.ilike(f"%{escaped_value}%", escape="\\")
             
-        if f.op == "in": return col.in_(f.value if isinstance(f.value, (list, tuple)) else [f.value])
-        if f.op == "is_null": return col.is_(None) if f.value else col.isnot(None)
-        return None
+        coerced_value = self._coerce_value(col, value)
 
+        if op == "eq": return col == coerced_value
+        if op == "ne": return col != coerced_value
+        if op == "gt": return col > coerced_value
+        if op == "lt": return col < coerced_value
+        if op == "ge": return col >= coerced_value
+        if op == "le": return col <= coerced_value
+        
+        if op == "in": return col.in_(coerced_value if isinstance(coerced_value, (list, tuple)) else [coerced_value])
+        
+        return None
 
     def _apply_includes(self, query, include_paths: List[str]):
         for path in include_paths:
@@ -178,6 +261,8 @@ class SearchEngine:
         return query
 
     def build_base_query(self, search_in: SearchRequest):
+        self._validate_request(search_in)
+        
         query = select(self.model)
         
         if search_in.include:
