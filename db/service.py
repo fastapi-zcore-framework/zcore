@@ -28,7 +28,7 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
     async def post_patch(self, model: ModelType) -> None: pass
     
     async def pre_delete(self, id: Any) -> None: pass
-    async def post_delete(self, id: Any) -> None: pass
+    async def post_delete(self, model: ModelType) -> None: pass
     
     async def pre_search(self, search_in: SearchRequest) -> None: pass
     async def post_search(self, models: Sequence[ModelType]) -> None: pass
@@ -99,5 +99,5 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.repository.delete(id=id, auto_commit=auto_commit)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
-        await self.post_delete(id=id)
+        await self.post_delete(model=result)
         return result
