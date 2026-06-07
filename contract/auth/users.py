@@ -1,8 +1,10 @@
 import uuid
+from typing import Protocol, Optional, Any
 
-from typing import Protocol, Optional
-from app.core.auth.models import Users
+from app.core.db.pagination import PaginatedResult
+
 
 class UserValidator(Protocol):
-    async def get(self, id: uuid.UUID) -> Optional[Users]:
-        ...
+    async def get(self, id: uuid.UUID) -> Optional[Any]: ...
+
+    async def get_active_paginated(self, params: Any) -> PaginatedResult: ...
