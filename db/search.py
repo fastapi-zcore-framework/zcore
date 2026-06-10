@@ -29,9 +29,8 @@ class SearchRequest(BaseModel):
     filters: Optional[List[FilterItem]] = []
     include: Optional[List[str]] = []
     sort: Optional[List[SortItem]] = []
-    limit: int = Field(default=100, le=500)
-    skip: int = 0
-    page: Optional[int] = None
+    size: int = Field(default=20, le=100)
+    page: int = 1
     cursor: Optional[str] = None
 
 class SearchEngine:
@@ -284,4 +283,5 @@ class SearchEngine:
 
     def build_query(self, search_in: SearchRequest):
         query = self.build_base_query(search_in)
-        return query.offset(search_in.skip).limit(search_in.limit)
+        offset = (search_in.page - 1) * search_in.size
+        return query.offset(offset).limit(search_in.size)

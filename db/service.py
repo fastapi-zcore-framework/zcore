@@ -5,7 +5,7 @@ from pydantic import BaseModel
 from app.core.exception.exceptions import EntityNotFound
 
 from app.core.db.setup import Base
-from app.core.db.pagination import PaginatedResult
+from app.core.db.pagination import PaginatedResult, BasePagination
 from app.core.db.repository import BaseRepository
 from app.core.db.search import SearchRequest
  
@@ -60,11 +60,20 @@ class BaseService(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         result = await self.post_get_all(models=result)
         return result
 
-    async def search(self, search_in: SearchRequest, is_paginated: bool = False) -> Sequence[ModelType] | PaginatedResult[ModelType]:
+    async def search(
+        self, 
+        search_in: SearchRequest, 
+        is_paginated: bool = False,
+        pagination_class: Optional[Type[BasePagination]] = None
+    ) -> Sequence[ModelType] | PaginatedResult[ModelType]:
+        
         await self.pre_search(search_in)
         
-        if is_paginated:
-            paginated_result = await self.repository.search_paginated(search_in)
+        if is_paginated or pagination_class is not None:
+            paginated_result = await self.repository.search_paginated(
+                search_in, 
+                pagination_class=pagination_class
+            )
             paginated_result.data = await self.post_get_all(paginated_result.data)
             await self.post_search(paginated_result.data)
             return paginated_result

@@ -9,6 +9,7 @@ from app.core.db.search import SearchRequest, SearchEngine
 
 from app.core.db.pagination import (
     PaginatedResult, 
+    BasePagination,
     PageNumberPagination, 
     CursorPagination, 
     PageNumberParams, 
@@ -49,17 +50,28 @@ class BaseRepository(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
             model=self.model
         )
     
-    async def search_paginated(self, search_in: SearchRequest) -> PaginatedResult[ModelType]:
-        if search_in.cursor is not None:
+    async def search_paginated(
+        self, 
+        search_in: SearchRequest, 
+        pagination_class: Optional[Type[BasePagination]] = None
+    ) -> PaginatedResult[ModelType]:
+        
+        use_cursor = False
+        if pagination_class is not None:
+            use_cursor = issubclass(pagination_class, CursorPagination)
+        else:
+            use_cursor = search_in.cursor is not None
+
+        if use_cursor:
             params = CursorParams(
                 cursor=search_in.cursor,
-                size=search_in.limit
+                size=search_in.size
             )
             paginator = CursorPagination(cursor_field=self.cursor_field)
         else:
             params = PageNumberParams(
                 page=search_in.page or 1,
-                size=search_in.limit
+                size=search_in.size
             )
             paginator = PageNumberPagination()
 

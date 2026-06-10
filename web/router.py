@@ -194,8 +194,12 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     
     async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
         is_paginated = self.pagination_class is not None
-        
-        result = await service.search(search_in, is_paginated=is_paginated)
+
+        result = await service.search(
+            search_in, 
+            is_paginated=is_paginated, 
+            pagination_class=self.pagination_class
+        )
         
         if isinstance(result, PaginatedResult):
             return ResponseWrapper(data=result.data, meta=result.meta)
