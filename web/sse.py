@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 
+from app.core.utils.utils import json_dumps, json_loads
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -53,7 +54,7 @@ class StreamManager:
                     except ValueError:
                         continue
                     
-                    data = json.loads(message["data"])
+                    data = json_loads(message["data"])
                     await self._local_publish(user_id, data)
         except asyncio.CancelledError:
             pass
@@ -82,7 +83,7 @@ class StreamManager:
             try:
                 await self.redis_client.publish(
                     f"stream:user:{user_id}",
-                    json.dumps(data)
+                    json_dumps(data)
                 )
                 return
             except Exception as e:

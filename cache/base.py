@@ -4,6 +4,7 @@ import logging
 from typing import Any, Optional
 
 from app.core.cache.ttllru_cache import TTLLRUCache
+from app.core.utils.utils import json_dumps, json_loads
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -39,7 +40,7 @@ class BaseCache:
         if self.redis_client:
             try:
                 val = await self.redis_client.get(full_key)
-                return json.loads(val) if val else None
+                return json_loads(val) if val else None
             except Exception as e:
                 logger.error(f"Redis get failed in '{self.prefix}': {e}")
         
@@ -51,7 +52,7 @@ class BaseCache:
             try:
                 await self.redis_client.set(
                     full_key,
-                    json.dumps(value),
+                    json_dumps(value),
                     ex=ttl
                 )
                 return

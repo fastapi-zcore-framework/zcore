@@ -1,6 +1,10 @@
 import re
+import uuid
+import json
 
-from typing import Annotated
+from datetime import datetime, date, time
+from decimal import Decimal
+from typing import Annotated, Any
 from fastapi import Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import HttpUrl, PlainSerializer
@@ -18,3 +22,23 @@ def slugify(text: str) -> str:
     return text
 
 SafeUrl = Annotated[HttpUrl, PlainSerializer(lambda v: str(v), return_type=str)]
+
+
+class CustomJSONEncoder(json.JSONEncoder):
+    def default(self, obj: Any) -> Any:
+        if isinstance(obj, uuid.UUID):
+            return str(obj)
+        if isinstance(obj, (datetime, date, time)):
+            return obj.isoformat()
+        if isinstance(obj, Decimal):
+            return float(obj)
+        try:
+            return super().default(obj)
+        except TypeError:
+            return str(obj)
+
+def json_dumps(obj: Any, **kwargs) -> str:
+    return json.dumps(obj, cls=CustomJSONEncoder, **kwargs)
+
+def json_loads(s: str | bytes, **kwargs) -> Any:
+    return json.loads(s, **kwargs)

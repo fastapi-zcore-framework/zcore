@@ -12,6 +12,8 @@ from sqlalchemy import select, func, and_, or_, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
+from app.core.utils.utils import json_dumps
+
 T = TypeVar("T")
 
 class PaginatedResult(Generic[T]):
@@ -93,14 +95,13 @@ class CursorPagination(BasePagination[T]):
 
     def _encode_cursor(self, last_item: Any) -> str:
         value = getattr(last_item, self.cursor_field, None)
-        if hasattr(value, "isoformat"):
-            value = value.isoformat()
         
         payload = {
             "value": value,
-            "id": str(getattr(last_item, "id", ""))
+            "id": getattr(last_item, "id", "")
         }
-        json_str = json.dumps(payload)
+        
+        json_str = json_dumps(payload)
         return base64.urlsafe_b64encode(json_str.encode()).decode()
 
     def _decode_cursor(self, cursor_str: str) -> dict[str, Any] | None:
