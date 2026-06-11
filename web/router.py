@@ -10,7 +10,7 @@ from fastapi.routing import APIRoute
 from app.core.web.response import ResponseWrapper
 
 from app.core.db.search import SearchRequest
-from app.core.db.service import BaseService
+from app.core.service.base import BaseService
 from app.core.db.pagination import PaginatedResult, BasePagination
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)

@@ -2,7 +2,7 @@ from fastapi import Request, Depends
 from typing import Annotated
 
 from app.core.exception.exceptions import ForbiddenError, AuthError
-from app.core.db.protocols import UserProtocol
+from app.core.security.protocols import UserProtocol
 
 from app.modules.auth.dependencies import get_current_user
 
