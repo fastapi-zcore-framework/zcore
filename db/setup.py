@@ -1,7 +1,7 @@
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from typing import AsyncGenerator
 
-from dataclasses import dataclass
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from sqlalchemy.orm import DeclarativeBase
 
@@ -9,11 +9,11 @@ from app.core.config import settings
 
 @dataclass(frozen=True)
 class Actions:
-    LISTVIEW:str
-    VIEW:str
-    CREATE:str
-    UPDATE:str
-    DELETE:str
+    LISTVIEW: str
+    VIEW: str
+    CREATE: str
+    UPDATE: str
+    DELETE: str
 
     @classmethod
     def actions(cls, t_name):
@@ -54,13 +54,9 @@ class DatabaseManager:
             except Exception:
                 await session.rollback()
                 raise
-        
-    async def get_db(self) -> AsyncGenerator[AsyncSession, None]: 
-        async with self._session_factory() as session:
-                yield session
 
 db_manager = DatabaseManager(settings.DATABASE_URL)
 
-async def get_db():
-    async for session in db_manager.get_db():
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    async with db_manager.session() as session:
         yield session
