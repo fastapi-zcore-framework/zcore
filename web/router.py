@@ -8,10 +8,9 @@ from fastapi import APIRouter, status, Depends
 from fastapi.routing import APIRoute
 
 from app.core.web.response import ResponseWrapper
-
 from app.core.db.search import SearchRequest
 from app.core.service.base import BaseService
-from app.core.db.pagination import PaginatedResult, BasePagination
+from app.core.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -106,10 +105,10 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             if self.pagination_class:
                 params_class = self.pagination_class.params_class
                 async def _get_all_endpoint(params: params_class = Depends(), service: BaseService = Depends(s_dep)):
-                    return await self.get_all_endpoint_paginated(params, service)
+                    return await self.get_all_endpoint(service, params)
             else:
-                async def _get_all_endpoint(limit: int = 100, skip: int = 0, service: BaseService = Depends(s_dep)):
-                    return await self.get_all_endpoint(limit, skip, service)
+                async def _get_all_endpoint(service: BaseService = Depends(s_dep)):
+                    return await self.get_all_endpoint(service)
 
             self.router.add_api_route(
                 path="/",
@@ -184,23 +183,21 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         data = await service.get(id)
         return ResponseWrapper(data=data)
     
-    async def get_all_endpoint(self, limit: int, skip: int, service: BaseService) -> ResponseWrapper:
-        data = await service.get_all(limit=limit, skip=skip)
-        return ResponseWrapper(data=data, meta={"limit": limit, "skip": skip})
-
-    async def get_all_endpoint_paginated(self, params: Any, service: BaseService) -> ResponseWrapper:
-        paginated_result = await service.get_all_paginated(params)
-        return ResponseWrapper(data=paginated_result.data, meta=paginated_result.meta)
+    async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -> ResponseWrapper:
+        result = await service.get_list(pagination)
+        if isinstance(result, PaginatedResult):
+            return ResponseWrapper(data=result.data, meta=result.meta)
+        return ResponseWrapper(data=result)
     
     async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
-        is_paginated = self.pagination_class is not None
+        pagination = None
+        if self.pagination_class:
+            if search_in.cursor is not None:
+                pagination = CursorParams(cursor=search_in.cursor, size=search_in.size)
+            else:
+                pagination = PageNumberParams(page=search_in.page, size=search_in.size)
 
-        result = await service.search(
-            search_in, 
-            is_paginated=is_paginated, 
-            pagination_class=self.pagination_class
-        )
-        
+        result = await service.search(search_in, pagination)
         if isinstance(result, PaginatedResult):
             return ResponseWrapper(data=result.data, meta=result.meta)
         return ResponseWrapper(data=result)
@@ -210,7 +207,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return ResponseWrapper(data=data)
     
     async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
-        data = await service.patch(id, data_in)
+        data = await service.update(id, data_in, partial=True)
         return ResponseWrapper(data=data)
     
     async def delete_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
