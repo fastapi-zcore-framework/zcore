@@ -192,7 +192,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
         pagination = None
         if self.pagination_class:
-            if search_in.cursor is not None:
+            if self.pagination_class.params_class == CursorParams:
                 pagination = CursorParams(cursor=search_in.cursor, size=search_in.size)
             else:
                 pagination = PageNumberParams(page=search_in.page, size=search_in.size)
