@@ -1,11 +1,10 @@
-import json
 import logging
 
 from typing import Any, Optional
 
-from app.core.cache.ttllru_cache import TTLLRUCache
-from app.core.utils.utils import json_dumps, json_loads
-from app.core.config import settings
+from zcore.cache.ttllru_cache import TTLLRUCache
+from zcore.utils.helpers import json_dumps, json_loads
+from zcore.config import settings
 
 logger = logging.getLogger(__name__)
 

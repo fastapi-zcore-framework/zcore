@@ -7,9 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
 from sqlalchemy.orm import load_only
 
-from app.core.db.setup import Base
-from app.core.db.search import SearchRequest, SearchEngine
-from app.core.db.pagination import (
+from zcore.db.setup import Base
+from zcore.db.search import SearchRequest, SearchEngine
+from zcore.db.pagination import (
     PageNumberPagination, 
     CursorPagination, 
     CursorParams

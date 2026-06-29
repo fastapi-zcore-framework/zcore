@@ -1,8 +1,8 @@
 from fastapi import Request, Depends
 from typing import Annotated
 
-from app.core.exception.exceptions import ForbiddenError, AuthError
-from app.core.security.protocols import UserProtocol
+from zcore.exceptions.base import ForbiddenError, AuthError
+from zcore.security.protocols import UserProtocol
 
 from app.modules.auth.dependencies import get_current_user
 

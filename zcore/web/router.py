@@ -7,10 +7,10 @@ from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 from fastapi.routing import APIRoute
 
-from app.core.web.response import ResponseWrapper
-from app.core.db.search import SearchRequest
-from app.core.service.base import BaseService
-from app.core.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
+from zcore.web.response import ResponseWrapper
+from zcore.db.search import SearchRequest
+from zcore.service.base import BaseService
+from zcore.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)

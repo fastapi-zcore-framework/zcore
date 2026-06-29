@@ -5,10 +5,10 @@ import aiofiles
 from typing import Annotated
 from fastapi import Depends
 
-from app.core.config import settings
+from zcore.config import settings
 
-from app.core.storage.base import StorageProvider
-from app.core.exception.exceptions import AppException
+from zcore.storage.base import StorageProvider
+from zcore.exceptions.base import AppException
 
 CHUNK_SIZE = 1024 * 1024
 

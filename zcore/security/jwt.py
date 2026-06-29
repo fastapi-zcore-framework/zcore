@@ -1,8 +1,8 @@
 import jwt
 from datetime import datetime, timezone, timedelta
 
-from app.core.config import settings
-from app.core.exception.exceptions import AuthError
+from zcore.config import settings
+from zcore.exceptions.base import AuthError
 
 def create_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()

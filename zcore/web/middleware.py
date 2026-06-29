@@ -5,7 +5,7 @@ import structlog
 
 from starlette.types import ASGIApp, Scope, Receive, Send
 
-from app.core.context.context import _current_user_id, _restricted_fields
+from zcore.context.context import _current_user_id, _restricted_fields
 
 log = structlog.get_logger()
 
