@@ -1,11 +1,9 @@
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncGenerator
+from typing import AsyncGenerator, Any, Optional
 
-from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
-
-from zcore.config import settings
 
 @dataclass(frozen=True)
 class Actions:
@@ -16,7 +14,7 @@ class Actions:
     DELETE: str
 
     @classmethod
-    def actions(cls, t_name):
+    def actions(cls, t_name: str) -> "Actions":
         actions = {}
         for action in cls.__dataclass_fields__.keys():
             actions[action] = f"{t_name}:{action.lower()}"
@@ -24,29 +22,49 @@ class Actions:
 
 class Base(DeclarativeBase):
     @classmethod
-    def actions(cls) -> Actions: 
-        return Actions.actions(cls.__tablename__)
+    def actions(cls) -> Actions:
+        t_name = getattr(cls, "__tablename__", None)
+        if not t_name:
+            raise AttributeError(f"Model {cls.__name__} does not have a __tablename__ defined.")
+        return Actions.actions(t_name)
 
 class DatabaseManager:
-    def __init__(self, db_url: str):
+    def __init__(self) -> None:
+        self._engine: Optional[AsyncEngine] = None
+        self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
+
+    def init_app(
+        self, 
+        db_url: str, 
+        pool_size: int = 5, 
+        max_overflow: int = 10, 
+        pool_recycle: int = 1800, 
+        echo: bool = False,
+        **engine_kwargs: Any
+    ) -> None:
         self._engine = create_async_engine(
             db_url,
-            echo=False,
-            pool_size=settings.POOL_SIZE,
-            max_overflow=settings.MAX_OVERFLOW,
-            pool_recycle=1800,
-            pool_pre_ping=True
+            echo=echo,
+            pool_size=pool_size,
+            max_overflow=max_overflow,
+            pool_recycle=pool_recycle,
+            pool_pre_ping=True,
+            **engine_kwargs
         )
         self._session_factory = async_sessionmaker(
             self._engine,
             expire_on_commit=False
         )
-           
-    async def close(self):
-        await self._engine.dispose()
-    
+
+    async def close(self) -> None:
+        if self._engine:
+            await self._engine.dispose()
+
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        if not self._session_factory:
+            raise RuntimeError("DatabaseManager has not been initialized. Call init_app() first.")
+            
         async with self._session_factory() as session:
             try:
                 yield session
@@ -55,7 +73,7 @@ class DatabaseManager:
                 await session.rollback()
                 raise
 
-db_manager = DatabaseManager(settings.DATABASE_URL)
+db_manager = DatabaseManager()
 
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with db_manager.session() as session:
