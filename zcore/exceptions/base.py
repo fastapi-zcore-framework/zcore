@@ -1,7 +1,9 @@
+from typing import Optional
+
 class AppException(Exception):
     status_code: int = 500
     
-    def __init__(self, message: str, payload: dict = None):
+    def __init__(self, message: str, payload: Optional[dict] = None) -> None:
         super().__init__(message)
         self.message = message
         self.payload = payload
