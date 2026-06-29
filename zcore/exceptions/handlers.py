@@ -2,7 +2,7 @@ import structlog
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from app.core.exception.exceptions import AppException
+from zcore.exceptions.base import AppException
 
 log = structlog.get_logger()
 

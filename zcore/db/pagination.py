@@ -12,7 +12,7 @@ from sqlalchemy import select, func, and_, or_, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import Select
 
-from app.core.utils.utils import json_dumps
+from zcore.utils.helpers import json_dumps
 
 T = TypeVar("T")
 
