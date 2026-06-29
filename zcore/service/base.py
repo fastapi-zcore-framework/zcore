@@ -3,11 +3,11 @@ from typing import Generic, TypeVar, Type, Any, Sequence
 
 from sqlalchemy.orm.interfaces import ExecutableOption
 
-from app.core.exception.exceptions import EntityNotFound
+from zcore.exceptions.base import EntityNotFound
 
-from app.core.db.setup import Base
-from app.core.db.repository import BaseRepository
-from app.core.db.search import SearchRequest
+from zcore.db.setup import Base
+from zcore.db.repository import BaseRepository
+from zcore.db.search import SearchRequest
 
 ModelType = TypeVar("ModelType", bound=Base)        
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)

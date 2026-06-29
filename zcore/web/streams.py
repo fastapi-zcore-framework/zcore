@@ -1,10 +1,9 @@
 import uuid
 import asyncio
-import json
 import logging
 
-from app.core.utils.utils import json_dumps, json_loads
-from app.core.config import settings
+from zcore.utils.helpers import json_dumps, json_loads
+from zcore.config import settings
 
 logger = logging.getLogger(__name__)
 

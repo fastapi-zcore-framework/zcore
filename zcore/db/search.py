@@ -9,9 +9,9 @@ from pydantic import BaseModel, Field
 from sqlalchemy import select, asc, desc, inspect, or_, and_
 from sqlalchemy.orm import joinedload, selectinload
 
-from app.core.db.setup import Base
-from app.core.context.context import get_restricted_fields
-from app.core.exception.exceptions import ValidationError, ForbiddenError
+from zcore.db.setup import Base
+from zcore.context.context import get_restricted_fields
+from zcore.exceptions.base import ValidationError, ForbiddenError
 
 ModelType = TypeVar("ModelType", bound=Base)
 
