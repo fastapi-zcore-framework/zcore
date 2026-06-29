@@ -30,7 +30,7 @@ class BasePermission(ABC):
             
         return user
 
-class ScopePermission(BasePermission):
+class HasScopes(BasePermission):
     def __init__(self, *required_scopes: str, allow_superuser: bool = True):
         self.required_scopes = set(required_scopes)
         self.allow_superuser = allow_superuser
