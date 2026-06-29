@@ -5,10 +5,6 @@ from fastapi import UploadFile
 class StorageProvider(ABC):
     @abstractmethod
     async def upload(self, file: UploadFile, folder: str) -> str:
-        """
-        Uploads a file and returns the unique path/URL.
-        return file path
-        """
         pass
 
     @abstractmethod
@@ -18,16 +14,11 @@ class StorageProvider(ABC):
         filename: str, 
         folder: str
     ) -> str:
-        """
-        Streaming upload for large files using chunks.
-        return file path
-        """
         pass
 
     @abstractmethod
     async def delete(self, file_path: str) -> bool:
-        """
-        Deletes a file from storage.
-        return bool result
-        """
         pass
+
+async def get_storage_provider() -> StorageProvider:
+    raise NotImplementedError("StorageProvider dependency override is required")
