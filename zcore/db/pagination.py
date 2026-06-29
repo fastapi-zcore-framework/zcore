@@ -1,18 +1,17 @@
 import uuid
 import math
 import base64
-import json
-
 from typing import Any, Sequence, TypeVar, Generic, Optional, Type, Literal
 from datetime import datetime
-from sqlalchemy.sql.sqltypes import DateTime
 from pydantic import BaseModel, Field
 
-from sqlalchemy import select, func, and_, or_, inspect
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.sql.sqltypes import DateTime
 from sqlalchemy.sql import Select
+from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, func, and_, or_, inspect
 
-from zcore.utils.helpers import json_dumps
+from zcore.utils.helpers import json_dumps, json_loads
+from zcore.exceptions.base import ValidationError
 
 T = TypeVar("T")
 
@@ -26,6 +25,7 @@ class PageNumberParams(BaseModel):
     size: int = Field(default=20, ge=1, le=100)
     sort_by: Optional[str] = None
     sort_order: Literal["asc", "desc"] = "asc"
+    include_count: bool = True
 
 class CursorParams(BaseModel):
     cursor: Optional[str] = None
@@ -59,30 +59,46 @@ class PageNumberPagination(BasePagination[T]):
 
         if params.sort_by:
             valid_columns = {col.key for col in inspect(model).columns}
-            if params.sort_by in valid_columns:
-                col = getattr(model, params.sort_by)
-                if params.sort_order == "desc":
-                    query = query.order_by(col.desc())
-                else:
-                    query = query.order_by(col.asc())
+            if params.sort_by not in valid_columns:
+                raise ValidationError(message=f"Invalid sort field: '{params.sort_by}' on {model.__name__}")
+                
+            col = getattr(model, params.sort_by)
+            if params.sort_order == "desc":
+                query = query.order_by(col.desc())
+            else:
+                query = query.order_by(col.asc())
 
-        count_query = select(func.count()).select_from(query.subquery())
-        count_result = await session.execute(count_query)
-        total = count_result.scalar_one()
+        total = None
+        total_pages = None
+        has_next = False
+        has_prev = page > 1
 
-        paginated_query = query.offset(offset).limit(size)
-        items_result = await session.execute(paginated_query)
-        items = items_result.scalars().all()
-
-        total_pages = math.ceil(total / size) if size > 0 else 0
+        if params.include_count:
+            count_query = select(func.count()).select_from(query.subquery())
+            count_result = await session.execute(count_query)
+            total = count_result.scalar_one()
+            total_pages = math.ceil(total / size) if size > 0 else 0
+            has_next = page < total_pages
+            
+            paginated_query = query.offset(offset).limit(size)
+            items_result = await session.execute(paginated_query)
+            items = list(items_result.scalars().all())
+        else:
+            paginated_query = query.offset(offset).limit(size + 1)
+            items_result = await session.execute(paginated_query)
+            items = list(items_result.scalars().all())
+            
+            if len(items) > size:
+                items = items[:size]
+                has_next = True
 
         meta = {
             "total": total,
             "page": page,
             "size": size,
             "total_pages": total_pages,
-            "has_next": page < total_pages,
-            "has_prev": page > 1
+            "has_next": has_next,
+            "has_prev": has_prev
         }
         return PaginatedResult(data=items, meta=meta)
 
@@ -95,21 +111,26 @@ class CursorPagination(BasePagination[T]):
 
     def _encode_cursor(self, last_item: Any) -> str:
         value = getattr(last_item, self.cursor_field, None)
-        
+        if isinstance(value, datetime):
+            value = value.isoformat()
+            
         payload = {
             "value": value,
-            "id": getattr(last_item, "id", "")
+            "id": str(getattr(last_item, "id", ""))
         }
         
         json_str = json_dumps(payload)
-        return base64.urlsafe_b64encode(json_str.encode()).decode()
+        encoded = base64.urlsafe_b64encode(json_str.encode()).decode()
+        return encoded.rstrip("=")
 
     def _decode_cursor(self, cursor_str: str) -> dict[str, Any] | None:
         if not cursor_str:
             return None
         try:
+            padding_needed = (4 - len(cursor_str) % 4) % 4
+            cursor_str += "=" * padding_needed
             decoded = base64.urlsafe_b64decode(cursor_str.encode()).decode()
-            return json.loads(decoded)
+            return json_loads(decoded)
         except Exception:
             return None
 
@@ -122,6 +143,10 @@ class CursorPagination(BasePagination[T]):
     ) -> PaginatedResult[T]:
         size = params.size
         cursor_data = self._decode_cursor(params.cursor) if params.cursor else None
+
+        valid_columns = {col.key for col in inspect(model).columns}
+        if self.cursor_field not in valid_columns:
+            raise ValidationError(message=f"Invalid cursor field: '{self.cursor_field}' on {model.__name__}")
 
         col = getattr(model, self.cursor_field)
         pk_col = getattr(model, "id")
