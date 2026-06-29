@@ -5,7 +5,7 @@ import structlog
 from typing import Any
 from starlette.types import ASGIApp, Scope, Receive, Send
 
-from zcore.context.context import _current_user_id, _restricted_fields
+from zcore.context.context import request_context
 
 log = structlog.get_logger()
 REQUEST_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-\.\_\:]{8,64}$")
@@ -21,9 +21,6 @@ class RequestLogMiddleware:
 
         s_time = time.perf_counter()
         structlog.contextvars.clear_contextvars()
-        
-        user_id_token = _current_user_id.set(None)
-        restricted_fields_token = _restricted_fields.set(None)
         
         raw_request_id = b""
         for name, value in scope.get("headers", []):
@@ -47,24 +44,22 @@ class RequestLogMiddleware:
                 message["headers"] = headers
             await send(message)
 
-        try:
-            await self.app(scope, receive, send_wrapper)
-            duration = (time.perf_counter() - s_time) * 1000
-            log.info(
-                "http request",
-                method=scope.get("method"),
-                path=scope.get("path"),
-                duration_ms=round(duration, 2),
-            )
-        except Exception:
-            duration = (time.perf_counter() - s_time) * 1000
-            log.exception(
-                "http request failed",
-                method=scope.get("method"),
-                path=scope.get("path"),
-                duration_ms=round(duration, 2),
-            )
-            raise
-        finally:
-            _current_user_id.reset(user_id_token)
-            _restricted_fields.reset(restricted_fields_token)
+        with request_context(user_id=None, fields=None):
+            try:
+                await self.app(scope, receive, send_wrapper)
+                duration = (time.perf_counter() - s_time) * 1000
+                log.info(
+                    "http request",
+                    method=scope.get("method"),
+                    path=scope.get("path"),
+                    duration_ms=round(duration, 2),
+                )
+            except Exception:
+                duration = (time.perf_counter() - s_time) * 1000
+                log.exception(
+                    "http request failed",
+                    method=scope.get("method"),
+                    path=scope.get("path"),
+                    duration_ms=round(duration, 2),
+                )
+                raise
