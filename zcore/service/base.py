@@ -1,10 +1,8 @@
 from pydantic import BaseModel
 from typing import Generic, TypeVar, Type, Any, Sequence
-
 from sqlalchemy.orm.interfaces import ExecutableOption
 
 from zcore.exceptions.base import EntityNotFound
-
 from zcore.db.setup import Base
 from zcore.db.repository import BaseRepository
 from zcore.db.search import SearchRequest
@@ -13,10 +11,17 @@ ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
-class ReadServiceMixin(Generic[ModelType]):
+class AbstractService(Generic[ModelType]):
     repository: BaseRepository
     model: Type[ModelType]
 
+    async def get(self, id: Any, fields: list[Any] = None, options: list[ExecutableOption] = None) -> ModelType:
+        raise NotImplementedError
+
+    async def get_by_ids(self, ids: list[Any], fields: list[Any] = None, options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+        raise NotImplementedError
+
+class ReadServiceMixin(AbstractService[ModelType]):
     async def post_get(self, model: ModelType) -> ModelType:
         return model
 
@@ -43,10 +48,7 @@ class ReadServiceMixin(Generic[ModelType]):
         result.data = await self.post_get_multi(result.data)
         return result
 
-class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    repository: BaseRepository
-    model: Type[ModelType]
-
+class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AbstractService[ModelType]):
     async def pre_create(self, schema: CreateSchemaType) -> None: pass
     async def post_create(self, model: ModelType) -> None: pass
     
@@ -71,9 +73,9 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.post_create(result)
         return result
 
-    async def create_multi(self, schemas: list[CreateSchemaType]) -> Sequence[ModelType]:
+    async def create_multi(self, schemas: list[CreateSchemaType], refresh: bool = False) -> Sequence[ModelType]:
         await self.pre_create_multi(schemas)
-        result = await self.repository.create_multi(schemas)
+        result = await self.repository.create_multi(schemas, refresh=refresh)
         await self.post_create_multi(result)
         return result
 
@@ -85,9 +87,9 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.post_update(result)
         return result
 
-    async def update_multi(self, data: dict[Any, UpdateSchemaType], partial: bool = False) -> Sequence[ModelType]:
+    async def update_multi(self, data: dict[Any, UpdateSchemaType], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]:
         await self.pre_update_multi(data, partial)
-        result = await self.repository.update_multi(data, partial)
+        result = await self.repository.update_multi(data, partial, refresh=refresh)
         await self.post_update_multi(result)
         return result
 
@@ -105,10 +107,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
         await self.post_delete_multi(result)
         return result
 
-class SearchServiceMixin(Generic[ModelType]):
-    repository: BaseRepository
-    model: Type[ModelType]
-
+class SearchServiceMixin(AbstractService[ModelType]):
     async def pre_search(self, search_in: SearchRequest) -> None: pass
     async def post_search(self, models: Sequence[ModelType]) -> None: pass
 
@@ -127,6 +126,6 @@ class BaseService(
     WriteServiceMixin[ModelType, CreateSchemaType, UpdateSchemaType],
     SearchServiceMixin[ModelType]
 ):
-    def __init__(self, model: Type[ModelType], repository: BaseRepository):
+    def __init__(self, model: Type[ModelType], repository: BaseRepository) -> None:
         self.model = model
         self.repository = repository
