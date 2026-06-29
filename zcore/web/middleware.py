@@ -2,20 +2,19 @@ import re
 import uuid
 import time
 import structlog
-
+from typing import Any
 from starlette.types import ASGIApp, Scope, Receive, Send
 
 from zcore.context.context import _current_user_id, _restricted_fields
 
 log = structlog.get_logger()
-
 REQUEST_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-\.\_\:]{8,64}$")
 
 class RequestLogMiddleware:
-    def __init__(self, app: ASGIApp):
+    def __init__(self, app: ASGIApp) -> None:
         self.app = app
 
-    async def __call__(self, scope: Scope, receive: Receive, send: Send):
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
@@ -23,21 +22,25 @@ class RequestLogMiddleware:
         s_time = time.perf_counter()
         structlog.contextvars.clear_contextvars()
         
-        
         user_id_token = _current_user_id.set(None)
         restricted_fields_token = _restricted_fields.set(None)
         
-        headers = dict(scope.get("headers", []))
-        raw_request_id  = headers.get(b"x-request-id", b"").decode("utf-8", errors="ignore").strip()
+        raw_request_id = b""
+        for name, value in scope.get("headers", []):
+            if name == b"x-request-id":
+                raw_request_id = value
+                break
+
+        request_id_str = raw_request_id.decode("utf-8", errors="ignore").strip() if raw_request_id else ""
         
-        if raw_request_id and REQUEST_ID_PATTERN.match(raw_request_id):
-            request_id = raw_request_id
+        if request_id_str and REQUEST_ID_PATTERN.match(request_id_str):
+            request_id = request_id_str
         else:
             request_id = str(uuid.uuid4())
         
         structlog.contextvars.bind_contextvars(request_id=request_id)
 
-        async def send_wrapper(message):
+        async def send_wrapper(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
                 headers.append((b"X-Request-ID", request_id.encode()))
@@ -47,7 +50,6 @@ class RequestLogMiddleware:
         try:
             await self.app(scope, receive, send_wrapper)
             duration = (time.perf_counter() - s_time) * 1000
-            
             log.info(
                 "http request",
                 method=scope.get("method"),
