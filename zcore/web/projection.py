@@ -1,0 +1,38 @@
+from typing import Any
+
+class ResponseProjector:
+    @staticmethod
+    def project(data: Any, restricted_fields: set[str]) -> Any:
+        if not data or not restricted_fields:
+            return data
+        for path in restricted_fields:
+            parts = path.split(".")
+            if parts[0] == "resource" and len(parts) > 1:
+                parts = parts[1:]
+            ResponseProjector._prune_nested(data, parts)
+        return data
+
+    @staticmethod
+    def _prune_nested(node: Any, path_parts: list[str]) -> None:
+        if not path_parts or node is None:
+            return
+        field = path_parts[0]
+        if len(path_parts) == 1:
+            if isinstance(node, dict):
+                node.pop(field, None)
+            elif isinstance(node, list):
+                for item in node:
+                    if isinstance(item, dict):
+                        item.pop(field, None)
+            return
+
+        if isinstance(node, dict):
+            next_node = node.get(field)
+            if next_node is not None:
+                ResponseProjector._prune_nested(next_node, path_parts[1:])
+        elif isinstance(node, list):
+            for item in node:
+                if isinstance(item, dict):
+                    next_node = item.get(field)
+                    if next_node is not None:
+                        ResponseProjector._prune_nested(next_node, path_parts[1:])

@@ -1,5 +1,7 @@
-from typing import Any, Optional
+from typing import Any, Optional, Type, TypeVar, cast
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+T = TypeVar("T", bound="ZCoreCoreSettings")
 
 class ZCoreCoreSettings(BaseSettings):
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
@@ -18,17 +20,17 @@ class ZCoreCoreSettings(BaseSettings):
     STORAGE_PATH: str = "./storage"
     REDIS_URL: Optional[str] = None
 
-_active_settings: Any = None
+_active_settings: Optional[ZCoreCoreSettings] = None
 
-def set_settings(settings_inst: Any) -> None:
+def set_settings(settings_inst: ZCoreCoreSettings) -> None:
     global _active_settings
     _active_settings = settings_inst
 
-def get_settings() -> Any:
+def get_settings(settings_class: Type[T] = ZCoreCoreSettings) -> T:
     global _active_settings
     if _active_settings is None:
-        _active_settings = ZCoreCoreSettings()
-    return _active_settings
+        _active_settings = settings_class()
+    return cast(T, _active_settings)
 
 class SettingsProxy:
     def __getattr__(self, name: str) -> Any:

@@ -5,6 +5,7 @@ import structlog
 from typing import Any
 from starlette.types import ASGIApp, Scope, Receive, Send
 
+from zcore.kernel.di import _current_scope_id, container
 from zcore.context.context import request_context
 
 log = structlog.get_logger()
@@ -63,3 +64,21 @@ class RequestLogMiddleware:
                     duration_ms=round(duration, 2),
                 )
                 raise
+            
+
+class ScopedDependencyMiddleware:
+    def __init__(self, app: ASGIApp) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+
+        scope_id = str(uuid.uuid4())
+        token = _current_scope_id.set(scope_id)
+        try:
+            await self.app(scope, receive, send)
+        finally:
+            container.clear_scope(scope_id)
+            _current_scope_id.reset(token)
