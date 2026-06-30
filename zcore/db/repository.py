@@ -1,9 +1,7 @@
 from pydantic import BaseModel
 from typing import Generic, TypeVar, Type, Any, Sequence, Optional
-
 from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
-
 from sqlalchemy.orm.interfaces import ExecutableOption
 from sqlalchemy.orm import load_only
 
@@ -19,12 +17,20 @@ ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
-class ReadRepositoryMixin(Generic[ModelType]):
+class AbstractRepository(Generic[ModelType]):
     db: AsyncSession
     model: Type[ModelType]
     pk: Any
+    pk_name: str
     cursor_field: str
 
+    async def get(self, id: Any, fields: list[Any] = None, options: list[ExecutableOption] = None) -> Optional[ModelType]:
+        raise NotImplementedError
+
+    async def get_by_ids(self, ids: list[Any], fields: list[Any] = None, options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+        raise NotImplementedError
+
+class ReadRepositoryMixin(AbstractRepository[ModelType]):
     async def exist(self, id: Any) -> bool:
         query = select(self.model.id).where(self.pk == id).limit(1)
         result = await self.db.execute(query)
@@ -62,14 +68,7 @@ class ReadRepositoryMixin(Generic[ModelType]):
         paginator = CursorPagination(self.cursor_field) if isinstance(pagination, CursorParams) else PageNumberPagination()
         return await paginator.paginate(self.db, query, pagination, self.model)
 
-class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType]):
-    db: AsyncSession
-    model: Type[ModelType]
-    pk: Any
-
-    async def get(self, id: Any, fields: list[Any] = None, options: list[ExecutableOption] = None) -> Optional[ModelType]: ...
-    async def get_by_ids(self, ids: list[Any], fields: list[Any] = None, options: list[ExecutableOption] = None) -> Sequence[ModelType]: ...
-
+class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], AbstractRepository[ModelType]):
     async def create(self, schema: CreateSchemaType) -> ModelType:
         record = self.model(**schema.model_dump())
         self.db.add(record)
@@ -77,12 +76,13 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         await self.db.refresh(record)
         return record
 
-    async def create_multi(self, schemas: list[CreateSchemaType]) -> Sequence[ModelType]:
+    async def create_multi(self, schemas: list[CreateSchemaType], refresh: bool = False) -> Sequence[ModelType]:
         records = [self.model(**schema.model_dump()) for schema in schemas]
         self.db.add_all(records)
         await self.db.flush()
-        for record in records:
-            await self.db.refresh(record)
+        if refresh:
+            for record in records:
+                await self.db.refresh(record)
         return records
 
     async def update(self, id: Any, schema: UpdateSchemaType, partial: bool = False) -> Optional[ModelType]:
@@ -96,9 +96,9 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         await self.db.refresh(record)
         return record
 
-    async def update_multi(self, data: dict[Any, UpdateSchemaType], partial: bool = False) -> Sequence[ModelType]:
+    async def update_multi(self, data: dict[Any, UpdateSchemaType], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]:
         records = await self.get_by_ids(ids=list(data.keys()))
-        record_map = {getattr(r, self.pk.name): r for r in records}
+        record_map = {getattr(r, self.pk_name): r for r in records}
         updated_records = []
         for record_id, schema in data.items():
             record = record_map.get(record_id)
@@ -108,8 +108,9 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
                     setattr(record, field, value)
                 updated_records.append(record)
         await self.db.flush()
-        for record in updated_records:
-            await self.db.refresh(record)
+        if refresh:
+            for record in updated_records:
+                await self.db.refresh(record)
         return updated_records
 
     async def delete(self, id: Any) -> Optional[ModelType]:
@@ -127,11 +128,7 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         await self.db.flush()
         return records
 
-class SearchRepositoryMixin(Generic[ModelType]):
-    db: AsyncSession
-    model: Type[ModelType]
-    cursor_field: str
-
+class SearchRepositoryMixin(AbstractRepository[ModelType]):
     async def search(self, search_in: SearchRequest, pagination: Any = None) -> Any:
         engine = SearchEngine(self.model)
         query = engine.build_base_query(search_in)
@@ -152,4 +149,5 @@ class BaseRepository(
         self.model = model
         self.db = db
         self.pk = inspect(self.model).primary_key[0]
-        self.cursor_field = self.pk.name
+        self.pk_name = self.pk.name
+        self.cursor_field = self.pk_name
