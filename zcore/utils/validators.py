@@ -1,8 +1,9 @@
+from typing import Any, Optional
 from jsonschema import validate, Draft7Validator, exceptions
 
 from zcore.exceptions.base import ValidationError
 
-def validate_json_schema(data: dict, schema: dict = None):
+def validate_json_schema(data: Any, schema: Optional[dict[str, Any]] = None) -> None:
     if data is None:
         return
     try:

@@ -13,6 +13,7 @@ from zcore.db.setup import get_db
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
+SafeUrl = Annotated[HttpUrl, PlainSerializer(lambda v: str(v), return_type=str)]
 
 def slugify(text: str) -> str:
     text = text.lower().strip()
@@ -20,9 +21,6 @@ def slugify(text: str) -> str:
     text = re.sub(r'[\s_-]+', '-', text)
     text = re.sub(r'^-+|-+$', '', text)
     return text
-
-SafeUrl = Annotated[HttpUrl, PlainSerializer(lambda v: str(v), return_type=str)]
-
 
 class CustomJSONEncoder(json.JSONEncoder):
     def default(self, obj: Any) -> Any:
@@ -37,8 +35,8 @@ class CustomJSONEncoder(json.JSONEncoder):
         except TypeError:
             return str(obj)
 
-def json_dumps(obj: Any, **kwargs) -> str:
+def json_dumps(obj: Any, **kwargs: Any) -> str:
     return json.dumps(obj, cls=CustomJSONEncoder, **kwargs)
 
-def json_loads(s: str | bytes, **kwargs) -> Any:
+def json_loads(s: str | bytes, **kwargs: Any) -> Any:
     return json.loads(s, **kwargs)
