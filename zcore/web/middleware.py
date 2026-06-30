@@ -4,6 +4,11 @@ import time
 import structlog
 from typing import Any
 from starlette.types import ASGIApp, Scope, Receive, Send
+from starlette.middleware.base import BaseHTTPMiddleware, RequestResponseEndpoint
+from starlette.requests import Request
+from starlette.responses import Response
+
+from zcore.kernel.di import _current_scope_id, container
 
 from zcore.context.context import request_context
 
@@ -63,3 +68,14 @@ class RequestLogMiddleware:
                     duration_ms=round(duration, 2),
                 )
                 raise
+            
+class ScopedDependencyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next: RequestResponseEndpoint) -> Response:
+        scope_id = str(uuid.uuid4())
+        token = _current_scope_id.set(scope_id)
+        try:
+            response = await call_next(request)
+            return response
+        finally:
+            container.clear_scope(scope_id)
+            _current_scope_id.reset(token)
