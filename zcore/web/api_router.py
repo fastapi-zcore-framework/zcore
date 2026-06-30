@@ -1,21 +1,19 @@
 import inspect
+import copy
 from typing import Callable, Coroutine, Any, get_origin, get_args
-from contextlib import AsyncExitStack
-
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
-from fastapi.exceptions import RequestValidationError
-from fastapi.dependencies.utils import solve_dependencies
-
 from pydantic import BaseModel
 
-from zcore.utils.helpers import json_dumps, json_loads
+from zcore.utils.helpers import json_dumps
 from zcore.web.response import ResponseWrapper
 from zcore.web.projection import ResponseProjector
 from zcore.context.context import get_restricted_fields
 
 class ZCoreRequest(Request):
+    _cached_body: bytes
+
     async def body(self) -> bytes:
         if not hasattr(self, "_cached_body"):
             self._cached_body = await super().body()
@@ -88,11 +86,30 @@ def prune_json_schema(schema: dict[str, Any], path: str) -> None:
     prune_node(schema, parts)
 
 class ZCoreAPIRoute(APIRoute):
+    expose_schema: bool
+    target_model: type[BaseModel] | None
+    _cached_raw_schema: dict[str, Any] | None
+
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        
         self.expose_schema = False
-        if self.openapi_extra and self.openapi_extra.get("expose_schema"):
-            self.expose_schema = True
+        if self.openapi_extra and isinstance(self.openapi_extra, dict):
+            if self.openapi_extra.get("expose_schema"):
+                self.expose_schema = True
+
+        self.target_model = None
+        self._cached_raw_schema = None
+
+        if self.expose_schema:
+            if self.methods and any(m in ["POST", "PUT", "PATCH"] for m in self.methods):
+                self.target_model = find_input_schema(self.dependant)
+            else:
+                self.target_model = find_output_schema(self.response_model)
+
+            if self.target_model:
+                self._cached_raw_schema = self.target_model.model_json_schema()
+
         if self.response_class == JSONResponse:
             self.response_class = ZCoreJSONResponse
 
@@ -103,19 +120,13 @@ class ZCoreAPIRoute(APIRoute):
             zcore_request = ZCoreRequest(request.scope, request._receive)
             
             if self.expose_schema and zcore_request.query_params.get("schema") == "true":
-                target_model = None
-                if zcore_request.method in ["POST", "PUT", "PATCH"]:
-                    target_model = find_input_schema(self.dependant)
-                else:
-                    target_model = find_output_schema(self.response_model)
-
-                if not target_model:
+                if not self._cached_raw_schema:
                     return JSONResponse(
                         status_code=400,
                         content={"success": False, "message": "No schema defined for this endpoint."}
                     )
                 
-                schema_dict = target_model.model_json_schema()
+                schema_dict = copy.deepcopy(self._cached_raw_schema)
                 hidden_fields = get_restricted_fields()
                 for field_path in hidden_fields:
                     prune_json_schema(schema_dict, field_path)
