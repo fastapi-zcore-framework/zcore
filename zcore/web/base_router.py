@@ -7,7 +7,7 @@ from fastapi.routing import APIRoute
 
 from zcore.security.permissions import HasScopes
 from zcore.web.response import ResponseWrapper
-from zcore.web.route import ZCoreAPIRoute
+from zcore.web.api_router import ZCoreAPIRoute
 from zcore.db.search import SearchRequest
 from zcore.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
 from zcore.service.base import BaseService
