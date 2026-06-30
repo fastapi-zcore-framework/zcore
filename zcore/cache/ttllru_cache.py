@@ -1,10 +1,9 @@
 import time
-
 from collections import OrderedDict
 from typing import Any, Optional
 
 class TTLLRUCache:
-    def __init__(self, maxsize: int = 1000):
+    def __init__(self, maxsize: int = 1000) -> None:
         self.maxsize = maxsize
         self.cache: OrderedDict[str, tuple[float, Any]] = OrderedDict()
 
@@ -18,7 +17,7 @@ class TTLLRUCache:
         self.cache.move_to_end(key)
         return val
 
-    def set(self, key: str, value: Any, ttl: int = 3600):
+    def set(self, key: str, value: Any, ttl: int = 3600) -> None:
         expiry = time.time() + ttl
         if key in self.cache:
             del self.cache[key]
@@ -26,5 +25,5 @@ class TTLLRUCache:
             self.cache.popitem(last=False)
         self.cache[key] = (expiry, value)
 
-    def delete(self, key: str):
+    def delete(self, key: str) -> None:
         self.cache.pop(key, None)
