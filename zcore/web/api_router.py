@@ -90,6 +90,9 @@ def prune_json_schema(schema: dict[str, Any], path: str) -> None:
 class ZCoreAPIRoute(APIRoute):
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         super().__init__(*args, **kwargs)
+        self.expose_schema = False
+        if self.openapi_extra and self.openapi_extra.get("expose_schema"):
+            self.expose_schema = True
         if self.response_class == JSONResponse:
             self.response_class = ZCoreJSONResponse
 
@@ -99,33 +102,7 @@ class ZCoreAPIRoute(APIRoute):
         async def custom_route_handler(request: Request) -> Response:
             zcore_request = ZCoreRequest(request.scope, request._receive)
             
-            if zcore_request.query_params.get("schema") == "true":
-                async with AsyncExitStack() as async_exit_stack:
-                    solve_kwargs = {
-                        "request": zcore_request,
-                        "dependant": self.dependant,
-                        "async_exit_stack": async_exit_stack,
-                        "dependency_overrides_provider": getattr(self, "dependency_overrides_provider", None),
-                    }
-                    sig = inspect.signature(solve_dependencies)
-                    if "embed_body_fields" in sig.parameters:
-                        body_field = getattr(self, "body_field", None)
-                        embed = getattr(body_field.field_info, "embed", False) if body_field and hasattr(body_field, "field_info") else False
-                        solve_kwargs["embed_body_fields"] = embed
-
-                    solved_result = await solve_dependencies(**solve_kwargs)
-                    errors = getattr(solved_result, "errors", [])
-                    if isinstance(solved_result, tuple) and len(solved_result) >= 2:
-                        errors = solved_result[1]
-                    if errors:
-                        filtered_errors = []
-                        for error in errors:
-                            loc = error.get("loc", []) if isinstance(error, dict) else getattr(error, "loc", [])
-                            if not loc or loc[0] != "body":
-                                filtered_errors.append(error)
-                        if filtered_errors:
-                            raise RequestValidationError(filtered_errors)
-                
+            if self.expose_schema and zcore_request.query_params.get("schema") == "true":
                 target_model = None
                 if zcore_request.method in ["POST", "PUT", "PATCH"]:
                     target_model = find_input_schema(self.dependant)

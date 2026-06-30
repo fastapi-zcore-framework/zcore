@@ -1,6 +1,6 @@
 import uuid
 from enum import StrEnum
-from typing import TypeVar, Generic, Type, Any
+from typing import TypeVar, Generic, Type, Any, Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 from fastapi.routing import APIRoute
@@ -11,7 +11,6 @@ from zcore.web.api_router import ZCoreAPIRoute
 from zcore.db.search import SearchRequest
 from zcore.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
 from zcore.service.base import BaseService
-
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -38,6 +37,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     pagination_class: Type[BasePagination] | None = None
     route_class: Type[APIRoute] = ZCoreAPIRoute
 
+    expose_schemas: set[RouteKey] | bool = False
+
     DEFAULT_PERMISSIONS: list[Any] | None | str = "AUTO"
     POST_PERMISSIONS: list[Any] | None = None
     GET_PERMISSIONS: list[Any] | None = None
@@ -55,6 +56,16 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         )
         self.exclude = self.exclude or set()
         self._register_routes()
+
+    def _get_openapi_extra(self, route_key: RouteKey) -> Optional[dict[str, Any]]:
+        if isinstance(self.expose_schemas, bool):
+            expose = self.expose_schemas
+        else:
+            expose = route_key in (self.expose_schemas or set())
+        
+        if expose:
+            return {"expose_schema": True}
+        return None
 
     def _normalize_dependencies(self, raw_deps: list[Any] | Any) -> list[Depends]:
         if raw_deps is None:
@@ -115,7 +126,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["POST"],
                 dependencies=self._get_route_dependencies(RouteKey.POST),
                 status_code=status.HTTP_201_CREATED,
-                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.POST)
             )
 
         if RouteKey.GET not in self.exclude:
@@ -128,7 +140,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["GET"],
                 dependencies=self._get_route_dependencies(RouteKey.GET),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.GET)
             )
 
         if RouteKey.GET_ALL not in self.exclude:
@@ -147,7 +160,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["GET"],
                 dependencies=self._get_route_dependencies(RouteKey.GET_ALL),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper[list[self.schema_out]] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[list[self.schema_out]] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.GET_ALL)
             )
 
         if RouteKey.SEARCH not in self.exclude:
@@ -160,7 +174,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["POST"],
                 dependencies=self._get_route_dependencies(RouteKey.SEARCH),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper[list[self.schema_out]] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[list[self.schema_out]] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.SEARCH)
             )
 
         if RouteKey.UPDATE not in self.exclude:
@@ -175,7 +190,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["PUT"],
                 dependencies=self._get_route_dependencies(RouteKey.UPDATE),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.UPDATE)
             )
 
         if RouteKey.PATCH not in self.exclude:
@@ -188,9 +204,10 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 path="/{id}",
                 endpoint=_patch_endpoint,
                 methods=["PATCH"],
-                dependencies=self._get_route_dependencies(RouteKey.PATCH) ,
+                dependencies=self._get_route_dependencies(RouteKey.PATCH),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper
+                response_model=ResponseWrapper[self.schema_out] if self.schema_out else ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.PATCH)
             )
 
         if RouteKey.DELETE not in self.exclude:
@@ -203,7 +220,8 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 methods=["DELETE"],
                 dependencies=self._get_route_dependencies(RouteKey.DELETE),
                 status_code=status.HTTP_200_OK,
-                response_model=ResponseWrapper
+                response_model=ResponseWrapper,
+                openapi_extra=self._get_openapi_extra(RouteKey.DELETE)
             )
             
     async def create_endpoint(self, data_in: CreateSchemaType, service: BaseService) -> ResponseWrapper:
