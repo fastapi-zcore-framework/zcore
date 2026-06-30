@@ -61,12 +61,16 @@ class SearchEngine:
         restricted = get_restricted_fields() or set()
         valid_columns = {col.key for col in self.mapper.columns}
         
+        MAX_INCLUDE_DEPTH = 3
         if search_in.include:
             for path in search_in.include:
                 if self._is_path_restricted(path, restricted):
                     raise ForbiddenError(message=f"Access to relation path '{path}' is restricted due to security policies.")
                 
                 parts = path.split(".")
+                if len(parts) > MAX_INCLUDE_DEPTH:
+                    raise ValidationError(message=f"Relation inclusion depth of '{path}' exceeds the maximum limit of {MAX_INCLUDE_DEPTH}.")
+                
                 accumulated_path: list[str] = []
                 for part in parts:
                     accumulated_path.append(part)

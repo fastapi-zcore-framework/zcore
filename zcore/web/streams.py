@@ -1,7 +1,8 @@
 import uuid
 import asyncio
 import logging
-from typing import Any, Optional
+from typing import Any, Optional, AsyncGenerator
+from contextlib import asynccontextmanager
 from zcore.utils.helpers import json_dumps, json_loads
 
 logger = logging.getLogger(__name__)
@@ -27,7 +28,6 @@ class StreamManager:
         client = self.redis_client
         if not client:
             return
-        
         try:
             self._pubsub = client.pubsub()
             await self._pubsub.psubscribe("stream:user:*")
@@ -45,7 +45,6 @@ class StreamManager:
                         user_id = uuid.UUID(user_id_str)
                     except ValueError:
                         continue
-                    
                     data = json_loads(message["data"])
                     await self._local_publish(user_id, data)
         except asyncio.CancelledError:
@@ -61,21 +60,27 @@ class StreamManager:
                 client = self.redis_client
                 if client and (self._pubsub_task is None or self._pubsub_task.done()):
                     await self.start_listening()
-                    
             self.users_queues[user_id].append(queue)
         return queue
 
-    def unsubscribe(self, user_id: uuid.UUID, queue: asyncio.Queue[Any]) -> None:
-        if user_id in self.users_queues:
-            if queue in self.users_queues[user_id]:
-                self.users_queues[user_id].remove(queue)
-            
-            if not self.users_queues[user_id]:
-                del self.users_queues[user_id]
+    async def unsubscribe(self, user_id: uuid.UUID, queue: asyncio.Queue[Any]) -> None:
+        async with self._lock:
+            if user_id in self.users_queues:
+                if queue in self.users_queues[user_id]:
+                    self.users_queues[user_id].remove(queue)
+                if not self.users_queues[user_id]:
+                    del self.users_queues[user_id]
+            if not self.users_queues and self._pubsub_task and not self._pubsub_task.done():
+                self._pubsub_task.cancel()
+                self._pubsub_task = None
 
-        if not self.users_queues and self._pubsub_task and not self._pubsub_task.done():
-            self._pubsub_task.cancel()
-            self._pubsub_task = None
+    @asynccontextmanager
+    async def subscription(self, user_id: uuid.UUID) -> AsyncGenerator[asyncio.Queue[Any], None]:
+        queue = await self.subscribe(user_id)
+        try:
+            yield queue
+        finally:
+            await self.unsubscribe(user_id, queue)
 
     async def publish(self, user_id: uuid.UUID, data: dict[str, Any]) -> None:
         client = self.redis_client
@@ -88,18 +93,18 @@ class StreamManager:
                 return
             except Exception as e:
                 logger.error(f"Redis publish failed: {e}")
-        
         await self._local_publish(user_id, data)
 
     async def _local_publish(self, user_id: uuid.UUID, data: dict[str, Any]) -> None:
-        queues = self.users_queues.get(user_id)
-        if not queues:
-            return
-        
-        for queue in list(queues):
-            try:
-                queue.put_nowait(data)
-            except asyncio.QueueFull:
-                self.unsubscribe(user_id, queue)
-
-stream_manager = StreamManager()
+        async with self._lock:
+            queues = self.users_queues.get(user_id)
+            if not queues:
+                return
+            for queue in list(queues):
+                try:
+                    queue.put_nowait(data)
+                except asyncio.QueueFull:
+                    if queue in queues:
+                        queues.remove(queue)
+            if not self.users_queues[user_id]:
+                del self.users_queues[user_id]
