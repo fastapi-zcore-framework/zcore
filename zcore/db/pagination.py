@@ -74,7 +74,9 @@ class PageNumberPagination(BasePagination[T]):
         has_prev = page > 1
 
         if params.include_count:
-            count_query = select(func.count()).select_from(query.subquery())
+            cleaned_query = query.order_by(None)
+            count_query = select(func.count()).select_from(cleaned_query.subquery())
+            
             count_result = await session.execute(count_query)
             total = count_result.scalar_one()
             total_pages = math.ceil(total / size) if size > 0 else 0
@@ -131,8 +133,9 @@ class CursorPagination(BasePagination[T]):
             cursor_str += "=" * padding_needed
             decoded = base64.urlsafe_b64decode(cursor_str.encode()).decode()
             return json_loads(decoded)
-        except Exception:
-            return None
+        except Exception as e:
+            # Fail-fast with clear Validation message on corrupted cursors
+            raise ValidationError(message="Malformed cursor parameter provided.") from e
 
     async def paginate(
         self,
@@ -167,6 +170,7 @@ class CursorPagination(BasePagination[T]):
                 except ValueError:
                     pass
 
+            # Safe comparison logic handling nullable fields dynamically
             if self.order == "desc":
                 query = query.where(
                     or_(
