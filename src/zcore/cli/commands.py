@@ -41,14 +41,14 @@ def init_project(project_name: str) -> None:
         ".gitignore": GITIGNORE_TEMPLATE
     }
 
-    print(f"\n🧱 Initializing ZCore Enterprise Project: '{project_name}'...")
+    print(f"\n🧱 Initializing ZCore Project: '{project_name}'...")
     for filename, content in files_to_create.items():
         create_file(project_dir / filename, content)
         
     print(f"\n🎉 Project '{project_name}' initialized successfully!")
     print(f"👉 Run: 'cd {project_name}' and run 'python -m zcore.cli startapp <app_name>' to generate a plugin!")
 
-def start_app(app_name: str) -> None:
+def start_app(app_name: str, with_template: bool = False) -> None:
     app_dir = Path(app_name.lower())
     
     if app_dir.exists():
@@ -63,20 +63,22 @@ def start_app(app_name: str) -> None:
     context = {
         "ModelName": model_name,
         "table_name": table_name,
-        "app_name": table_name
+        "app_name": table_name,
+        "project_name": Path(os.getcwd()).name
     }
 
     files_to_create = {
         "__init__.py": "",
-        "models.py": MODEL_TEMPLATE.format(**context),
-        "schemas.py": SCHEMA_TEMPLATE.format(**context),
-        "repositories.py": REPOSITORY_TEMPLATE.format(**context),
-        "services.py": SERVICE_TEMPLATE.format(**context),
-        "routers.py": ROUTER_TEMPLATE.format(**context),
-        "plugin.py": PLUGIN_TEMPLATE.format(**context) # HERE IS OUR AWESOME PLUGIN!
+        "models.py": MODEL_TEMPLATE.format(**context) if with_template else "",
+        "schemas.py": SCHEMA_TEMPLATE.format(**context) if with_template else "",
+        "repositories.py": REPOSITORY_TEMPLATE.format(**context) if with_template else "",
+        "services.py": SERVICE_TEMPLATE.format(**context) if with_template else "",
+        "routers.py": ROUTER_TEMPLATE.format(**context) if with_template else "",
+        "plugin.py": PLUGIN_TEMPLATE.format(**context)
     }
 
-    print(f"\n🚀 Scaffolding ZCore Domain App (with Built-In Plugin): {model_name}...")
+    print(f"\n🚀 Scaffolding ZCore Domain App (with Built-In Plugin): {model_name}..."
+           if with_template else f"\n💫 Scaffolding Clean ZCore App (WITHOUT Boilerplate): {model_name}...")
     for filename, content in files_to_create.items():
         create_file(app_dir / filename, content)
         

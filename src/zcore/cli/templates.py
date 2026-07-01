@@ -143,8 +143,8 @@ class {ModelName}Response({ModelName}Base):
 
 REPOSITORY_TEMPLATE = """from zcore import BaseRepository, SessionDep
 
-from {project_name}.{app_name}.models import {ModelName}
-from {project_name}.{app_name}.schemas import {ModelName}Create, {ModelName}Update
+from .models import {ModelName}
+from .schemas import {ModelName}Create, {ModelName}Update
 
 class {ModelName}Repository(BaseRepository[{ModelName}, {ModelName}Create, {ModelName}Update]):
     def __init__(self, db: SessionDep):
@@ -152,9 +152,9 @@ class {ModelName}Repository(BaseRepository[{ModelName}, {ModelName}Create, {Mode
 """
 
 SERVICE_TEMPLATE = """from zcore import BaseService, Inject
-from {project_name}.{app_name}.models import {ModelName}
-from {project_name}.{app_name}.schemas import {ModelName}Create, {ModelName}Update
-from {project_name}.{app_name}.repositories import {ModelName}Repository
+from .models import {ModelName}
+from .schemas import {ModelName}Create, {ModelName}Update
+from .repositories import {ModelName}Repository
 
 class {ModelName}Service(BaseService[{ModelName}, {ModelName}Create, {ModelName}Update]):
     def __init__(self, repository: {ModelName}Repository = Inject({ModelName}Repository)):
@@ -162,9 +162,9 @@ class {ModelName}Service(BaseService[{ModelName}, {ModelName}Create, {ModelName}
 """
 
 ROUTER_TEMPLATE = """from zcore import BaseRouter
-from {project_name}.{app_name}.schemas import {ModelName}Create, {ModelName}Update, {ModelName}Response
-from {project_name}.{app_name}.services import {ModelName}Service
-from {project_name}.{app_name}.models import {ModelName}
+from .schemas import {ModelName}Create, {ModelName}Update, {ModelName}Response
+from .services import {ModelName}Service
+from .models import {ModelName}
 
 class {ModelName}Router(BaseRouter[{ModelName}Create, {ModelName}Update]):
     model = {ModelName}
@@ -183,7 +183,6 @@ router_instance = {ModelName}Router()
 
 PLUGIN_TEMPLATE = """from fastapi import FastAPI
 from zcore.kernel import Plugin
-from {project_name}.{app_name}.routers import router_instance
 
 class {ModelName}Plugin(Plugin):
     name = "{app_name}"
@@ -192,7 +191,8 @@ class {ModelName}Plugin(Plugin):
 
     def setup(self, app: FastAPI) -> None:
         # Wire this module's sub-router directly to the central FastAPI app
-        app.include_router(router_instance.router)
+        # from .routers import router_instance
+        # app.include_router(router_instance.router)
 
     async def before_startup(self) -> None:
         # Executes before any other plugin starts

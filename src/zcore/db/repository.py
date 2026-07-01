@@ -1,17 +1,19 @@
 from pydantic import BaseModel
-from typing import Generic, TypeVar, Type, Any, Sequence, Optional, List
+from typing import TYPE_CHECKING, Generic, TypeVar, Type, Any, Sequence, Optional, List
 from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
 from sqlalchemy.orm import load_only
 
 from zcore.db.setup import Base
-from zcore.db.search import SearchRequest, SearchEngine
 from zcore.db.pagination import (
     PageNumberPagination, 
     CursorPagination, 
     CursorParams
 )
+
+if TYPE_CHECKING:
+    from zcore.db.search import SearchRequest, SearchEngine
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
@@ -142,7 +144,8 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         return records
 
 class SearchRepositoryMixin(AbstractRepository[ModelType]):
-    async def search(self, search_in: SearchRequest, pagination: Any = None) -> Any:
+    async def search(self, search_in: "SearchRequest", pagination: Any = None) -> Any:
+        from zcore.db.search import SearchEngine
         engine = SearchEngine(self.model)
         query = engine.build_base_query(search_in)
         if pagination is None:
