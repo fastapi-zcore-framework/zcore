@@ -1,4 +1,4 @@
-import logging
+import structlog
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
 
@@ -9,7 +9,7 @@ except ImportError:
 
 from zcore.config import settings
 
-logger = logging.getLogger("zcore.security.hashing")
+logger = structlog.get_logger()
 
 # Dynamically construct Argon2 parameters from config settings with safe fallbacks
 _memory_cost = getattr(settings, "ARGON2_MEMORY_COST", 65536)     # 64 MB
