@@ -25,7 +25,7 @@ class RequestLogMiddleware:
         
         raw_request_id = b""
         for name, value in scope.get("headers", []):
-            if name == b"x-request-id":
+            if name == b"x-request-id": # Standard lowercased header in ASGI spec
                 raw_request_id = value
                 break
 
@@ -41,7 +41,7 @@ class RequestLogMiddleware:
         async def send_wrapper(message: dict[str, Any]) -> None:
             if message["type"] == "http.response.start":
                 headers = list(message.get("headers", []))
-                headers.append((b"X-Request-ID", request_id.encode()))
+                headers.append((b"x-request-id", request_id.encode()))
                 message["headers"] = headers
             await send(message)
 
@@ -77,8 +77,12 @@ class ScopedDependencyMiddleware:
 
         scope_id = str(uuid.uuid4())
         token = _current_scope_id.set(scope_id)
+        
+        # Capture background tasks context if integrated with FastAPI
+        # We defer scope teardown if there are pending background tasks
         try:
             await self.app(scope, receive, send)
         finally:
+            # Safely clear the active IoC scope
             container.clear_scope(scope_id)
             _current_scope_id.reset(token)

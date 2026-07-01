@@ -1,6 +1,10 @@
 import inspect
+import asyncio
+import structlog
 from collections import defaultdict
 from typing import Callable, Any, Coroutine, TypeVar
+
+logger = structlog.getLogger("zcore.events")
 
 T = TypeVar("T")
 EventHandler = Callable[..., Coroutine[Any, Any, Any] | Any]
@@ -18,10 +22,31 @@ class EventDispatcher:
 
     async def dispatch(self, event_name: str, *args: Any, **kwargs: Any) -> list[Any]:
         handlers = self._subscribers.get(event_name, [])
-        results = []
+        if not handlers:
+            return []
+
+        async_tasks = []
+        sync_results = []
+
         for handler in handlers:
-            if inspect.iscoroutinefunction(handler):
-                results.append(await handler(*args, **kwargs))
-            else:
-                results.append(handler(*args, **kwargs))
-        return results
+            try:
+                if inspect.iscoroutinefunction(handler):
+                    # Prepare for concurrent execution
+                    async_tasks.append(handler(*args, **kwargs))
+                else:
+                    sync_results.append(handler(*args, **kwargs))
+            except Exception as e:
+                logger.error(f"Error preparing event handler {handler.__name__} for event '{event_name}': {e}")
+
+        # Run async event tasks concurrently to prevent sequential bottlenecking
+        async_results = []
+        if async_tasks:
+            results = await asyncio.gather(*async_tasks, return_exceptions=True)
+            for res in results:
+                if isinstance(res, Exception):
+                    logger.error(f"Unhandled exception in async event listener for event '{event_name}': {res}")
+                    async_results.append(None)
+                else:
+                    async_results.append(res)
+
+        return sync_results + async_results

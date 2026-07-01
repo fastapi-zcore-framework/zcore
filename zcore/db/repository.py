@@ -1,5 +1,5 @@
 from pydantic import BaseModel
-from typing import Generic, TypeVar, Type, Any, Sequence, Optional
+from typing import Generic, TypeVar, Type, Any, Sequence, Optional, List
 from sqlalchemy import select, inspect
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
@@ -24,10 +24,10 @@ class AbstractRepository(Generic[ModelType]):
     pk_name: str
     cursor_field: str
 
-    async def get(self, id: Any, fields: list[Any] = None, options: list[ExecutableOption] = None) -> Optional[ModelType]:
+    async def get(self, id: Any, fields: Optional[List[Any]] = None, options: Optional[List[ExecutableOption]] = None) -> Optional[ModelType]:
         raise NotImplementedError
 
-    async def get_by_ids(self, ids: list[Any], fields: list[Any] = None, options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+    async def get_by_ids(self, ids: List[Any], fields: Optional[List[Any]] = None, options: Optional[List[ExecutableOption]] = None) -> Sequence[ModelType]:
         raise NotImplementedError
 
 class ReadRepositoryMixin(AbstractRepository[ModelType]):
@@ -36,7 +36,7 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
         result = await self.db.execute(query)
         return result.first() is not None
 
-    async def get(self, id: Any, fields: list[Any] = None, options: list[ExecutableOption] = None) -> Optional[ModelType]:
+    async def get(self, id: Any, fields: Optional[List[Any]] = None, options: Optional[List[ExecutableOption]] = None) -> Optional[ModelType]:
         query = select(self.model).where(self.pk == id)
         if fields:
             query = query.options(load_only(*fields))
@@ -45,7 +45,11 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
         result = await self.db.execute(query)
         return result.scalars().first()
 
-    async def get_by_ids(self, ids: list[Any], fields: list[Any] = None, options: list[ExecutableOption] = None) -> Sequence[ModelType]:
+    async def get_by_ids(self, ids: List[Any], fields: Optional[List[Any]] = None, options: Optional[List[ExecutableOption]] = None) -> Sequence[ModelType]:
+        # Fast path: Skip DB hit if empty list passed
+        if not ids:
+            return []
+            
         query = select(self.model).where(self.pk.in_(ids))
         if fields:
             query = query.options(load_only(*fields))
@@ -54,7 +58,7 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
         result = await self.db.execute(query)
         return result.scalars().all()
 
-    async def get_list(self, pagination: Any = None, fields: list[Any] = None, options: list[ExecutableOption] = None) -> Any:
+    async def get_list(self, pagination: Any = None, fields: Optional[List[Any]] = None, options: Optional[List[ExecutableOption]] = None) -> Any:
         query = select(self.model)
         if fields:
             query = query.options(load_only(*fields))
@@ -76,7 +80,10 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         await self.db.refresh(record)
         return record
 
-    async def create_multi(self, schemas: list[CreateSchemaType], refresh: bool = False) -> Sequence[ModelType]:
+    async def create_multi(self, schemas: List[CreateSchemaType], refresh: bool = False) -> Sequence[ModelType]:
+        if not schemas:
+            return []
+            
         records = [self.model(**schema.model_dump()) for schema in schemas]
         self.db.add_all(records)
         await self.db.flush()
@@ -97,6 +104,9 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         return record
 
     async def update_multi(self, data: dict[Any, UpdateSchemaType], partial: bool = False, refresh: bool = False) -> Sequence[ModelType]:
+        if not data:
+            return []
+            
         records = await self.get_by_ids(ids=list(data.keys()))
         record_map = {getattr(r, self.pk_name): r for r in records}
         updated_records = []
@@ -121,7 +131,10 @@ class WriteRepositoryMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType
         await self.db.flush()
         return record
 
-    async def delete_multi(self, ids: list[Any]) -> Sequence[ModelType]:
+    async def delete_multi(self, ids: List[Any]) -> Sequence[ModelType]:
+        if not ids:
+            return []
+            
         records = await self.get_by_ids(ids=ids)
         for record in records:
             await self.db.delete(record)
