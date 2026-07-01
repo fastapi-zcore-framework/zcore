@@ -1,7 +1,7 @@
 from __future__ import annotations
 import uuid
 from datetime import datetime, date
-from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable
+from typing import Any, List, Optional, Literal, Type, TypeVar, Dict, Callable, Set
 from pydantic import BaseModel, Field
 
 from sqlalchemy import select, asc, desc, inspect, or_, and_
@@ -42,13 +42,18 @@ class SearchEngine:
         self.custom_handlers[field_name] = handler
         return self
 
-    def _is_path_restricted(self, path: str, restricted_set: set[str]) -> bool:
+    def _is_path_restricted(self, path: str, restricted_set: Set[str]) -> bool:
+        """
+        Robust, case-insensitive check against unauthorized relational access.
+        Safeguards against casing bypass exploits (e.g. 'Password' bypassing 'password' filter).
+        """
         if not restricted_set:
             return False
         
-        normalized_path = path.replace("resource.", "")
+        # Strictly lower-case all paths for secure string comparison
+        normalized_path = path.replace("resource.", "").lower()
         for restricted in restricted_set:
-            normalized_restricted = restricted.replace("resource.", "")
+            normalized_restricted = restricted.replace("resource.", "").lower()
             
             if normalized_path == normalized_restricted:
                 return True
@@ -58,7 +63,7 @@ class SearchEngine:
         return False
 
     def _validate_request(self, search_in: SearchRequest, max_depth: int = 3) -> None:
-        restricted = get_restricted_fields() or set()
+        restricted = set(get_restricted_fields())
         valid_columns = {col.key for col in self.mapper.columns}
         
         MAX_INCLUDE_DEPTH = 3
@@ -95,7 +100,7 @@ class SearchEngine:
         if search_in.filters:
             self._validate_filters_recursive(search_in.filters, valid_columns, restricted, current_depth=1, max_depth=max_depth)
 
-    def _validate_filter_field(self, field_path: str, restricted: set[str]) -> None:
+    def _validate_filter_field(self, field_path: str, restricted: Set[str]) -> None:
         parts = field_path.split(".")
         current_model = self.model
         
@@ -120,8 +125,8 @@ class SearchEngine:
     def _validate_filters_recursive(
         self, 
         filters: List[FilterItem], 
-        valid_columns: set[str], 
-        restricted: set[str], 
+        valid_columns: Set[str], 
+        restricted: Set[str], 
         current_depth: int, 
         max_depth: int
     ) -> None:
@@ -234,7 +239,9 @@ class SearchEngine:
         return None
 
     def _apply_includes(self, query: Select, include_paths: List[str]) -> Select:
-        for path in include_paths:
+        unique_paths = sorted(list(set(include_paths)), key=len)
+        
+        for path in unique_paths:
             parts = path.split(".")
             loader = None
             current_model = self.model
@@ -280,6 +287,10 @@ class SearchEngine:
         return query
 
     def build_query(self, search_in: SearchRequest) -> Select:
+        """
+        Builds a standard page-number based limit/offset query.
+        For keyset pagination, utilize BaseRepository.search() which dynamically resolves cursors.
+        """
         query = self.build_base_query(search_in)
         offset = (search_in.page - 1) * search_in.size
         return query.offset(offset).limit(search_in.size)
