@@ -1,9 +1,12 @@
+import structlog
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from typing import AsyncGenerator, Any, Optional
 
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
+
+logger = structlog.get_logger()
 
 @dataclass(frozen=True)
 class Actions:
@@ -53,23 +56,30 @@ class DatabaseManager:
         )
         self._session_factory = async_sessionmaker(
             self._engine,
-            expire_on_commit=False
+            expire_on_commit=False,
+            class_=AsyncSession
         )
+        logger.info("DatabaseManager successfully initialized.")
 
     async def close(self) -> None:
         if self._engine:
             await self._engine.dispose()
+            logger.info("DatabaseManager engine connections closed.")
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        """
+        Yields an AsyncSession. Transactions are NOT auto-committed here to prevent double-commit
+        clashes when used alongside UnitOfWork. Standard SQLAlchemy transactional boundaries apply.
+        """
         if not self._session_factory:
             raise RuntimeError("DatabaseManager has not been initialized. Call init_app() first.")
             
         async with self._session_factory() as session:
             try:
                 yield session
-                await session.commit()
             except Exception:
+                # Always rollback on unhandled exceptions to keep session state pristine
                 await session.rollback()
                 raise
 
