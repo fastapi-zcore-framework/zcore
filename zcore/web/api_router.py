@@ -1,6 +1,5 @@
-import inspect
 import copy
-from typing import Callable, Coroutine, Any, get_origin, get_args
+from typing import Callable, Coroutine, Any, get_origin, get_args, Union
 from fastapi import Request, Response
 from fastapi.routing import APIRoute
 from fastapi.responses import JSONResponse
@@ -144,11 +143,16 @@ class ZCoreAPIRoute(APIRoute):
             hidden_fields = get_restricted_fields()
             if hidden_fields and "application/json" in response.headers.get("content-type", "").lower():
                 vary = response.headers.get("vary", "")
-                if vary:
-                    if "authorization" not in vary.lower():
-                        response.headers["vary"] = f"{vary}, Authorization"
-                else:
-                    response.headers["vary"] = "Authorization"
+                # Secure: Dynamically vary the cache by both Authorization and Cookie to prevent CDN/Proxy cache poisoning
+                target_vary_headers = ["Authorization", "Cookie"]
+                existing_vary = [v.strip().lower() for v in vary.split(",")] if vary else []
+                
+                new_vary_elements = [v for v in target_vary_headers if v.lower() not in existing_vary]
+                if new_vary_elements:
+                    if vary:
+                        response.headers["vary"] = f"{vary}, {', '.join(new_vary_elements)}"
+                    else:
+                        response.headers["vary"] = ", ".join(new_vary_elements)
             return response
 
         return custom_route_handler

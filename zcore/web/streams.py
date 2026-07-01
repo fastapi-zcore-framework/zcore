@@ -1,11 +1,11 @@
 import uuid
 import asyncio
-import logging
+import structlog
 from typing import Any, Optional, AsyncGenerator
 from contextlib import asynccontextmanager
 from zcore.utils.helpers import json_dumps, json_loads
 
-logger = logging.getLogger(__name__)
+logger = structlog.get_logger()
 
 _stream_redis_client: Any = None
 
@@ -51,6 +51,14 @@ class StreamManager:
             pass
         except Exception as e:
             logger.error(f"Error in Redis PubSub stream listener: {e}")
+        finally:
+            if self._pubsub:
+                try:
+                    await self._pubsub.punsubscribe("stream:user:*")
+                    await self._pubsub.close()
+                    logger.info("Redis PubSub connection safely released.")
+                except Exception as e:
+                    logger.error(f"Failed to release Redis PubSub connection: {e}")
 
     async def subscribe(self, user_id: uuid.UUID) -> asyncio.Queue[Any]:
         queue: asyncio.Queue[Any] = asyncio.Queue(maxsize=100)
