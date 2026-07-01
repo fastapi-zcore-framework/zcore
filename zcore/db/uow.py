@@ -1,9 +1,9 @@
-import logging
+import structlog
 from typing import Any, List, Tuple
 from sqlalchemy.ext.asyncio import AsyncSession
 from zcore.kernel.events import EventDispatcher
 
-logger = logging.get_logger()
+logger = structlog.get_logger()
 
 class UnitOfWork:
     def __init__(self, session: AsyncSession, dispatcher: EventDispatcher) -> None:
@@ -42,9 +42,11 @@ class UnitOfWork:
         self._pending_events.clear()
 
     async def __aenter__(self) -> "UnitOfWork":
+        self.session.info["uow_managed"] = True
         return self
 
     async def __aexit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        self.session.info["uow_managed"] = False
         if exc_type:
             await self.rollback()
         else:
