@@ -1,6 +1,6 @@
 from zcore.kernel.di import Inject, container
 from zcore.kernel.engine import Kernel
-from zcore.db.setup import Base, get_db
+from zcore.db.setup import Base, get_db, SessionDep
 from zcore.db.repository import BaseRepository
 from zcore.db.uow import UnitOfWork
 from zcore.service.base import BaseService
@@ -13,6 +13,7 @@ __all__ = [
     "container",
     "Kernel",
     "Base",
+    "SessionDep",
     "get_db",
     "BaseRepository",
     "UnitOfWork",
