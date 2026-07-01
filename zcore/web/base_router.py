@@ -1,6 +1,6 @@
 import uuid
 from enum import StrEnum
-from typing import TypeVar, Generic, Type, Any, Optional
+from typing import TypeVar, Generic, Type, Any, Optional, Union
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 from fastapi.routing import APIRoute
@@ -11,6 +11,7 @@ from zcore.web.api_router import ZCoreAPIRoute
 from zcore.db.search import SearchRequest
 from zcore.db.pagination import PaginatedResult, BasePagination, PageNumberParams, CursorParams
 from zcore.service.base import BaseService
+from zcore.kernel.di import Inject
 
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
@@ -26,36 +27,48 @@ class RouteKey(StrEnum):
 
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     model: Type[Any]
-    create_schema: Type[CreateSchemaType] | None = None
-    update_schema: Type[UpdateSchemaType] | None = None
-    schema_out: Type[BaseModel] | None = None
+    create_schema: Optional[Type[CreateSchemaType]] = None
+    update_schema: Optional[Type[UpdateSchemaType]] = None
+    schema_out: Optional[Type[BaseModel]] = None
     service: Any = None
 
     prefix: str = ""
-    tags: list[str] | None = None
-    exclude: set[RouteKey] | None = None
-    pagination_class: Type[BasePagination] | None = None
+    tags: Optional[list[str]] = None
+    exclude: Optional[set[RouteKey]] = None
+    pagination_class: Optional[Type[BasePagination]] = None
     route_class: Type[APIRoute] = ZCoreAPIRoute
 
-    expose_schemas: set[RouteKey] | bool = False
+    expose_schemas: Union[set[RouteKey], bool] = False
 
-    DEFAULT_PERMISSIONS: list[Any] | None | str = "AUTO"
-    POST_PERMISSIONS: list[Any] | None = None
-    GET_PERMISSIONS: list[Any] | None = None
-    GET_ALL_PERMISSIONS: list[Any] | None = None
-    SEARCH_PERMISSIONS: list[Any] | None = None
-    UPDATE_PERMISSIONS: list[Any] | None = None
-    PATCH_PERMISSIONS: list[Any] | None = None
-    DELETE_PERMISSIONS: list[Any] | None = None
+    DEFAULT_PERMISSIONS: Optional[Union[list[Any], str]] = "AUTO"
+    POST_PERMISSIONS: Optional[list[Any]] = None
+    GET_PERMISSIONS: Optional[list[Any]] = None
+    GET_ALL_PERMISSIONS: Optional[list[Any]] = None
+    SEARCH_PERMISSIONS: Optional[list[Any]] = None
+    UPDATE_PERMISSIONS: Optional[list[Any]] = None
+    PATCH_PERMISSIONS: Optional[list[Any]] = None
+    DELETE_PERMISSIONS: Optional[list[Any]] = None
 
     def __init__(self) -> None:
+        # Fail-Fast Startup Verification
+        if not self.service:
+            raise ValueError(f"Service class must be defined in '{self.__class__.__name__}'.")
+            
         self.router = APIRouter(
             prefix=self.prefix,
             tags=self.tags or [],
             route_class=self.route_class
         )
         self.exclude = self.exclude or set()
+        self._validate_schema_configurations()
         self._register_routes()
+
+    def _validate_schema_configurations(self) -> None:
+        """Startup check to ensure that routes requiring input schemas are not configured as None."""
+        if RouteKey.POST not in self.exclude and self.create_schema is None:
+            raise ValueError(f"POST route is enabled in '{self.__class__.__name__}', but 'create_schema' is None.")
+        if (RouteKey.UPDATE not in self.exclude or RouteKey.PATCH not in self.exclude) and self.update_schema is None:
+            raise ValueError(f"UPDATE/PATCH route is enabled in '{self.__class__.__name__}', but 'update_schema' is None.")
 
     def _get_openapi_extra(self, route_key: RouteKey) -> Optional[dict[str, Any]]:
         if isinstance(self.expose_schemas, bool):
@@ -67,7 +80,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             return {"expose_schema": True}
         return None
 
-    def _normalize_dependencies(self, raw_deps: list[Any] | Any) -> list[Depends]:
+    def _normalize_dependencies(self, raw_deps: Union[list[Any], Any]) -> list[Depends]:
         if raw_deps is None:
             return []
         
@@ -114,10 +127,11 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
 
     def _register_routes(self) -> None:
         service_callable = self.service
+        service_dependency = Inject(service_callable)
 
         if RouteKey.POST not in self.exclude:
             c_schema = self.create_schema
-            async def _create_endpoint(data_in: c_schema, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _create_endpoint(data_in: c_schema, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.create_endpoint(data_in, service_inst)
             
             self.router.add_api_route(
@@ -131,7 +145,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             )
 
         if RouteKey.GET not in self.exclude:
-            async def _get_endpoint(id: uuid.UUID, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _get_endpoint(id: uuid.UUID, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.get_endpoint(id, service_inst)
 
             self.router.add_api_route(
@@ -148,10 +162,10 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             if self.pagination_class:
                 params_class = self.pagination_class.params_class
                 
-                async def _get_all_endpoint(params: params_class = Depends(), service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+                async def _get_all_endpoint(params: params_class = Depends(), service_inst: BaseService = service_dependency) -> ResponseWrapper:
                     return await self.get_all_endpoint(service_inst, params)
             else:
-                async def _get_all_endpoint(service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+                async def _get_all_endpoint(service_inst: BaseService = service_dependency) -> ResponseWrapper:
                     return await self.get_all_endpoint(service_inst)
 
             self.router.add_api_route(
@@ -165,7 +179,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             )
 
         if RouteKey.SEARCH not in self.exclude:
-            async def _search_endpoint(search_in: SearchRequest, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _search_endpoint(search_in: SearchRequest, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.search_endpoint(search_in, service_inst)
 
             self.router.add_api_route(
@@ -181,7 +195,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         if RouteKey.UPDATE not in self.exclude:
             u_schema = self.update_schema
             
-            async def _update_endpoint(id: uuid.UUID, data_in: u_schema, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _update_endpoint(id: uuid.UUID, data_in: u_schema, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.update_endpoint(id, data_in, service_inst)
 
             self.router.add_api_route(
@@ -197,7 +211,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         if RouteKey.PATCH not in self.exclude:
             u_schema = self.update_schema
             
-            async def _patch_endpoint(id: uuid.UUID, data_in: u_schema, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _patch_endpoint(id: uuid.UUID, data_in: u_schema, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.patch_endpoint(id, data_in, service_inst)
                 
             self.router.add_api_route(
@@ -211,7 +225,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             )
 
         if RouteKey.DELETE not in self.exclude:
-            async def _delete_endpoint(id: uuid.UUID, service_inst: BaseService = Depends(service_callable)) -> ResponseWrapper:
+            async def _delete_endpoint(id: uuid.UUID, service_inst: BaseService = service_dependency) -> ResponseWrapper:
                 return await self.delete_endpoint(id, service_inst)
 
             self.router.add_api_route(
