@@ -43,14 +43,9 @@ class SearchEngine:
         return self
 
     def _is_path_restricted(self, path: str, restricted_set: Set[str]) -> bool:
-        """
-        Robust, case-insensitive check against unauthorized relational access.
-        Safeguards against casing bypass exploits (e.g. 'Password' bypassing 'password' filter).
-        """
         if not restricted_set:
             return False
         
-        # Strictly lower-case all paths for secure string comparison
         normalized_path = path.replace("resource.", "").lower()
         for restricted in restricted_set:
             normalized_restricted = restricted.replace("resource.", "").lower()
@@ -73,8 +68,6 @@ class SearchEngine:
                     raise ForbiddenError(message=f"Access to relation path '{path}' is restricted due to security policies.")
                 
                 parts = path.split(".")
-                if len(parts) > MAX_INCLUDE_DEPTH:
-                    raise ValidationError(message=f"Relation inclusion depth of '{path}' exceeds the maximum limit of {MAX_INCLUDE_DEPTH}.")
                 
                 accumulated_path: list[str] = []
                 for part in parts:
@@ -90,12 +83,15 @@ class SearchEngine:
                         raise ValidationError(message=f"Invalid include relation path: '{path}'")
                     current_model = rel.mapper.class_
 
+                if len(parts) > MAX_INCLUDE_DEPTH:
+                    raise ValidationError(message=f"Relation inclusion depth of '{path}' exceeds the maximum limit of {MAX_INCLUDE_DEPTH}.")
+
         if search_in.sort:
             for s in search_in.sort:
-                if s.field not in valid_columns:
-                    raise ValidationError(message=f"Invalid sort field: '{s.field}' on {self.model.__name__}")
                 if self._is_path_restricted(s.field, restricted):
                     raise ForbiddenError(message=f"Sorting by restricted field '{s.field}' is forbidden.")
+                if s.field not in valid_columns:
+                    raise ValidationError(message=f"Invalid sort field: '{s.field}' on {self.model.__name__}")
 
         if search_in.filters:
             self._validate_filters_recursive(search_in.filters, valid_columns, restricted, current_depth=1, max_depth=max_depth)
@@ -287,10 +283,6 @@ class SearchEngine:
         return query
 
     def build_query(self, search_in: SearchRequest) -> Select:
-        """
-        Builds a standard page-number based limit/offset query.
-        For keyset pagination, utilize BaseRepository.search() which dynamically resolves cursors.
-        """
         query = self.build_base_query(search_in)
         offset = (search_in.page - 1) * search_in.size
         return query.offset(offset).limit(search_in.size)

@@ -92,14 +92,14 @@ class TargetService:
     [
         (
             {"password", "resource.password"},
-            {"id": "1", "name": "UserA", "password": "hash"},
-            {"id": "1", "name": "UserA"},
+            {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA", "password": "hash"},
+            {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA"},
             ["Authorization", "Cookie"]
         ),
         (
             set(),
-            {"id": "1", "name": "UserA", "password": "hash"},
-            {"id": "1", "name": "UserA", "password": "hash"},
+            {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA", "password": "hash"},
+            {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA", "password": "hash"},
             []
         )
     ]

@@ -8,11 +8,29 @@ class ResponseProjector:
             return data
             
         json_data = json_loads(json_dumps(data))
-        for path in restricted_fields:
-            parts = path.split(".")
-            if parts[0] == "resource" and len(parts) > 1:
-                parts = parts[1:]
-            ResponseProjector._prune_nested(json_data, parts)
+        
+        if isinstance(json_data, dict) and "data" in json_data:
+            data_field = json_data["data"]
+            if isinstance(data_field, list):
+                for item in data_field:
+                    for path in restricted_fields:
+                        parts = path.split(".")
+                        if parts[0] == "resource" and len(parts) > 1:
+                            parts = parts[1:]
+                        ResponseProjector._prune_nested(item, parts)
+            elif isinstance(data_field, dict):
+                for path in restricted_fields:
+                    parts = path.split(".")
+                    if parts[0] == "resource" and len(parts) > 1:
+                        parts = parts[1:]
+                    ResponseProjector._prune_nested(data_field, parts)
+        else:
+            for path in restricted_fields:
+                parts = path.split(".")
+                if parts[0] == "resource" and len(parts) > 1:
+                    parts = parts[1:]
+                ResponseProjector._prune_nested(json_data, parts)
+                
         return json_data
 
     @staticmethod

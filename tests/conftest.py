@@ -89,7 +89,7 @@ def clean_test_storage(test_storage_dir: str) -> Generator[None, None, None]:
     if os.path.exists(test_storage_dir):
         shutil.rmtree(test_storage_dir)
 
-@pytest_asyncio.fixture(scope="session")
+@pytest_asyncio.fixture
 async def test_engine(test_db_url: str) -> AsyncGenerator[AsyncEngine, None]:
     engine = create_async_engine(test_db_url, echo=False)
     db_manager._engine = engine
