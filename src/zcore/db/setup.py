@@ -1,8 +1,8 @@
 import structlog
+from fastapi import Depends
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
-from typing import AsyncGenerator, Any, Optional
-
+from typing import AsyncGenerator, Any, Optional, Annotated
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
@@ -88,3 +88,5 @@ db_manager = DatabaseManager()
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
     async with db_manager.session() as session:
         yield session
+        
+SessionDep = Annotated[AsyncSession, Depends(get_db)]

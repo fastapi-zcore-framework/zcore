@@ -1,4 +1,4 @@
-from zcore.db.setup import Base, db_manager, get_db
+from zcore.db.setup import Base, db_manager, get_db, SessionDep
 from zcore.db.repository import BaseRepository, AbstractRepository
 from zcore.db.uow import UnitOfWork
 from zcore.db.pagination import (
