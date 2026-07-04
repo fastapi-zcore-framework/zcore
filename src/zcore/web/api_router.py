@@ -1,3 +1,11 @@
+"""Custom API Route and Serialization.
+
+This module provides specialized request, response, and routing behaviors for the ZCore
+web layer. It intercepts JSON rendering to prune restricted fields from HTTP responses, 
+resolves endpoint schema structures, and exposes dynamically pruned JSON schemas 
+for client inspection.
+"""
+
 import copy
 from typing import Callable, Coroutine, Any, get_origin, get_args, Union
 from fastapi import Request, Response
@@ -10,29 +18,79 @@ from zcore.web.response import ResponseWrapper
 from zcore.web.projection import ResponseProjector
 from zcore.context.context import get_restricted_fields
 
+
 class ZCoreRequest(Request):
+    """Custom HTTP Request subclass caching body byte strings.
+
+    Prevents downstream multiread lockups by caching evaluated request payload bytes.
+    """
+
     _cached_body: bytes
 
     async def body(self) -> bytes:
+        """Asynchronously retrieve and cache the request body bytes.
+
+        Returns:
+            The raw request body byte string.
+        """
         if not hasattr(self, "_cached_body"):
             self._cached_body = await super().body()
         return self._cached_body
 
+
 class ZCoreJSONResponse(JSONResponse):
+    """Custom JSONResponse that dynamically filters serialized outputs.
+
+    Intercepts standard rendering to evaluate the active security context's 
+    restricted fields and prunes unauthorized keys before serialization.
+    """
+
     def render(self, content: Any) -> bytes:
+        """Render the response content into a JSON byte string.
+
+        Checks for active restricted fields in the current execution context 
+        and filters the content structure before encoding.
+
+        Args:
+            content: The raw Python data structure to serialize.
+
+        Returns:
+            The UTF-8 encoded JSON byte string.
+        """
         restricted_fields = get_restricted_fields()
         if restricted_fields and content is not None:
             content = ResponseProjector.project(content, restricted_fields)
         return json_dumps(content).encode("utf-8")
 
+
 def find_input_schema(dependant: Any) -> type[BaseModel] | None:
+    """Analyze FastAPI dependency models to find the body input Pydantic schema.
+
+    Args:
+        dependant: The FastAPI endpoint dependency structure to analyze.
+
+    Returns:
+        The matched input Pydantic BaseModel class, or None.
+    """
     for param in getattr(dependant, "body_params", []):
         annotation = getattr(param.field_info, "annotation", None) or getattr(param, "type_", None)
         if isinstance(annotation, type) and issubclass(annotation, BaseModel):
             return annotation
     return None
 
+
 def find_output_schema(response_model: Any) -> type[BaseModel] | None:
+    """Recursively analyze route response models to extract the target Pydantic schema.
+
+    Traverses generic containers (lists, unions, optional envelopes) to isolate 
+    the underlying database or API model schema.
+
+    Args:
+        response_model: The raw response model schema type to evaluate.
+
+    Returns:
+        The target output Pydantic BaseModel class, or None.
+    """
     if response_model is None:
         return None
     origin = get_origin(response_model)
@@ -47,7 +105,17 @@ def find_output_schema(response_model: Any) -> type[BaseModel] | None:
             return schema
     return None
 
+
 def prune_json_schema(schema: dict[str, Any], path: str) -> None:
+    """Recursively remove a restricted field path from a raw JSON Schema dictionary.
+
+    Deletes matching attributes and requirements from both local properties and 
+    definitions referenced via `$ref`.
+
+    Args:
+        schema: The target JSON Schema dictionary to modify in-place.
+        path: The dot-path string (e.g., "resource.restricted_field") to prune.
+    """
     parts = path.split(".")
     if parts[0] == "resource" and len(parts) > 1:
         parts = parts[1:]
@@ -84,12 +152,31 @@ def prune_json_schema(schema: dict[str, Any], path: str) -> None:
 
     prune_node(schema, parts)
 
+
 class ZCoreAPIRoute(APIRoute):
+    """Custom API Route extending standard FastAPI route executions.
+
+    Configures routes to use the `ZCoreJSONResponse` class for dynamic output pruning 
+    and handles route requests requesting schema definitions (via `?schema=true` query bounds) 
+    by returning custom-pruned endpoint definitions.
+
+    Attributes:
+        expose_schema: Boolean flag indicating if schema exposure is enabled for this route.
+        target_model: The identified Pydantic model representing inputs or outputs.
+        _cached_raw_schema: The cached raw JSON Schema dictionary for the target model.
+    """
+
     expose_schema: bool
     target_model: type[BaseModel] | None
     _cached_raw_schema: dict[str, Any] | None
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
+        """Initialize the ZCoreAPIRoute.
+
+        Args:
+            *args: Positional arguments passed to the parent APIRoute.
+            **kwargs: Keyword arguments passed to the parent APIRoute.
+        """
         super().__init__(*args, **kwargs)
         
         self.expose_schema = False
@@ -116,6 +203,14 @@ class ZCoreAPIRoute(APIRoute):
             self.response_class = ZCoreJSONResponse
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[None, None, Response]]:
+        """Intercept and extend the default routing execution handler.
+
+        Appends schema lookup interception routines and configures cache variation
+        directives when data-filtering context boundaries are active.
+
+        Returns:
+            An asynchronous route handler wrapper.
+        """
         original_route_handler = super().get_route_handler()
 
         async def custom_route_handler(request: Request) -> Response:
