@@ -1,3 +1,10 @@
+"""Cryptographic Password Hashing Utilities.
+
+This module manages password security utilizing the Argon2id hashing algorithm.
+Configuration parameters (memory cost, time iterations, and parallelism) are dynamically 
+resolved from system settings with safe, cryptographically sound defaults.
+"""
+
 import structlog
 from argon2 import PasswordHasher
 from argon2.exceptions import VerifyMismatchError
@@ -22,8 +29,20 @@ ph = PasswordHasher(
     parallelism=_parallelism
 )
 
+
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Safely verifies a candidate password against an Argon2 hash."""
+    """Verify a plain-text password against a stored Argon2 hash.
+
+    Suppresses expected cryptographic mismatches or invalid hash string errors, 
+    returning boolean outcomes safely to prevent timing side-channel attacks.
+
+    Args:
+        plain_password: The unhashed candidate password.
+        hashed_password: The valid stored Argon2 hash string.
+
+    Returns:
+        True if the candidate password matches the hash, False otherwise.
+    """
     try:
         return ph.verify(hashed_password, plain_password)
     except (VerifyMismatchError, InvalidHashError):
@@ -32,8 +51,19 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         logger.error(f"Password verification encountered an unexpected failure: {e}")
         return False
 
+
 def get_password_hash(password: str) -> str:
-    """Generates an Argon2 secure hash for the provided password."""
+    """Generate a secure Argon2 hash from a plain-text password.
+
+    Args:
+        password: The plain-text password to hash.
+
+    Returns:
+        The computed Argon2 cryptographic hash string.
+
+    Raises:
+        RuntimeError: If the underlying Argon2 generator encounters an unexpected error.
+    """
     try:
         return ph.hash(password)
     except Exception as e:
