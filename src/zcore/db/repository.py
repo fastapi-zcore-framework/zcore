@@ -1,6 +1,6 @@
 """ZCore Database Repository Pattern Layer.
 
-This module provides an enterprise-grade Repository pattern implementation for SQLAlchemy 
+This module provides a Repository pattern implementation for SQLAlchemy 
 2.0 and Pydantic V2. It decouples business logic from database interactions by exposing 
 highly specialized, reusable interfaces divided into read, write, and search capabilities. 
 It supports dynamic pagination, eager load optimization, and field pruning.

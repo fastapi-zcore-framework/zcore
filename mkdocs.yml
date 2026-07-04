@@ -1,0 +1,74 @@
+site_name: ZCore
+site_description: Minimalist, architectural framework built on top of FastAPI.
+site_author: Ali Alf Ostovar
+site_url: https://fastapi-zcore-framework.github.io/docs
+
+repo_name: fastapi-zcore-framework/zcore
+repo_url: https://github.com/fastapi-zcore-framework/zcore
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: teal
+      accent: purple
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: teal
+      accent: purple
+      toggle:
+        icon: material/weather-night
+        name: Switch to light mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - content.code.copy
+    - content.code.select
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+
+nav:
+  - Home: index.md
+  - Tutorials:
+      - Quickstart: tutorials/quickstart.md
+      - First Plugin: tutorials/first-plugin.md
+  - How-To Guides:
+      - Dynamic Queries: how-to/database-queries.md
+      - Field Masking: how-to/field-masking.md
+      - File Upload: how-to/file-upload.md
+      - Cache Management: how-to/cache-management.md
+  - Explanation:
+      - Dependency Injection: explanation/dependency-injection.md
+      - Transaction Atomicity: explanation/transaction-atomicity.md
+      - Lifecycle Events: explanation/lifecycle-events.md
+  - Reference:
+      - API Router: reference/api-router.md
+      - Repository: reference/repository.md
+      - Configuration Settings: reference/config-settings.md

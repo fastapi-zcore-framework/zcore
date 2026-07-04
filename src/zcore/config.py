@@ -28,7 +28,7 @@ class ZCoreCoreSettings(BaseSettings):
         POOL_SIZE: The connection pool size for database connections.
         DATABASE_TEST_URL: Connection URI for database testing and integration runs.
         SECRET_KEY: Cryptographic secret key used for signing web tokens and hashes.
-        PROJECT_NAME: Name of the enterprise-grade project.
+        PROJECT_NAME: Name of the project.
         ALGORITHM: Cryptographic algorithm utilized for signing JWTs.
         ACCESS_TOKEN_EXPIRE_MINUTES: Expiry duration for authentication access tokens in minutes.
         REFRESH_TOKEN_EXPIRE_DAYS: Expiry duration for refresh tokens in days.
@@ -49,7 +49,7 @@ class ZCoreCoreSettings(BaseSettings):
     DATABASE_TEST_URL: str = "sqlite+aiosqlite:///zcore_test.db"
     
     SECRET_KEY: str = "zcore-insecure-fallback-secret-key-must-be-changed"
-    PROJECT_NAME: str = "ZCore Enterprise Application"
+    PROJECT_NAME: str = "ZCore Application"
     ALGORITHM: str = "HS256"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30
     REFRESH_TOKEN_EXPIRE_DAYS: int = 7
