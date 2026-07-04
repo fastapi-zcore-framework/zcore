@@ -45,19 +45,23 @@ class DatabaseManager:
         echo: bool = False,
         **engine_kwargs: Any
     ) -> None:
+        kwargs: dict[str, Any] = {}
+        if "sqlite" not in db_url:
+            kwargs["pool_size"] = pool_size
+            kwargs["max_overflow"] = max_overflow
+            kwargs["pool_recycle"] = pool_recycle
+
         self._engine = create_async_engine(
             db_url,
             echo=echo,
-            pool_size=pool_size,
-            max_overflow=max_overflow,
-            pool_recycle=pool_recycle,
             pool_pre_ping=True,
+            **kwargs,
             **engine_kwargs
         )
         self._session_factory = async_sessionmaker(
-            self._engine,
-            expire_on_commit=False,
-            class_=AsyncSession
+            bind=self._engine,
+            class_=AsyncSession,
+            expire_on_commit=False
         )
         logger.info("DatabaseManager successfully initialized.")
 
@@ -68,10 +72,6 @@ class DatabaseManager:
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
-        """
-        Yields an AsyncSession. Transactions are NOT auto-committed here to prevent double-commit
-        clashes when used alongside UnitOfWork. Standard SQLAlchemy transactional boundaries apply.
-        """
         if not self._session_factory:
             raise RuntimeError("DatabaseManager has not been initialized. Call init_app() first.")
             
@@ -79,7 +79,6 @@ class DatabaseManager:
             try:
                 yield session
             except Exception:
-                # Always rollback on unhandled exceptions to keep session state pristine
                 await session.rollback()
                 raise
 

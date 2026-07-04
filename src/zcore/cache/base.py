@@ -19,7 +19,6 @@ _shared_redis_client: Optional[Any] = None
 _eviction_task: Optional[asyncio.Task] = None
 
 def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None:
-    """Initializes the shared Redis client and spawns the background memory eviction loop."""
     global _shared_redis_client, _eviction_task
     
     if REDIS_AVAILABLE and redis_url:
@@ -38,7 +37,6 @@ def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None:
         _eviction_task = asyncio.create_task(_start_eviction_loop(interval=60))
 
 async def _start_eviction_loop(interval: int = 60) -> None:
-    """Async background worker loop that periodically evicts expired entries from TTLLRUCache."""
     while True:
         try:
             await asyncio.sleep(interval)
@@ -77,11 +75,6 @@ class BaseCache(Generic[T]):
         return f"{self.prefix}:{key}"
 
     async def get(self, key: str, target_type: Optional[Type[BaseModel]] = None) -> Optional[Union[T, BaseModel, Any]]:
-        """
-        Retrieves an item from the cache.
-        If target_type is provided as a Pydantic model class, the cached JSON payload
-        is automatically deserialized and validated.
-        """
         full_key = self._get_key(key)
         client = self.redis_client
         raw_val = None
@@ -99,8 +92,6 @@ class BaseCache(Generic[T]):
             return None
             
         try:
-            # Parse the string/bytes to JSON primitives
-            # If retrieved from local cache, it might already be parsed, check type safely
             parsed_data = json_loads(raw_val) if isinstance(raw_val, (str, bytes)) else raw_val
             
             if target_type and issubclass(target_type, BaseModel):
@@ -115,8 +106,7 @@ class BaseCache(Generic[T]):
         full_key = self._get_key(key)
         client = self.redis_client
         
-        # Serialize the value securely
-        serialized_val = json_dumps(value) if not isinstance(value, (str, int, float, bool)) else value
+        serialized_val = json_dumps(value)
         
         if client:
             try:

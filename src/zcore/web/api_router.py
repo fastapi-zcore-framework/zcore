@@ -109,7 +109,10 @@ class ZCoreAPIRoute(APIRoute):
             if self.target_model:
                 self._cached_raw_schema = self.target_model.model_json_schema()
 
-        if self.response_class == JSONResponse:
+        current_class = self.response_class
+        if hasattr(current_class, "value"):
+            current_class = getattr(current_class, "value")
+        if current_class == JSONResponse:
             self.response_class = ZCoreJSONResponse
 
     def get_route_handler(self) -> Callable[[Request], Coroutine[None, None, Response]]:
@@ -143,7 +146,6 @@ class ZCoreAPIRoute(APIRoute):
             hidden_fields = get_restricted_fields()
             if hidden_fields and "application/json" in response.headers.get("content-type", "").lower():
                 vary = response.headers.get("vary", "")
-                # Secure: Dynamically vary the cache by both Authorization and Cookie to prevent CDN/Proxy cache poisoning
                 target_vary_headers = ["Authorization", "Cookie"]
                 existing_vary = [v.strip().lower() for v in vary.split(",")] if vary else []
                 

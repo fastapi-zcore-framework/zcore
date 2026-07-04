@@ -1,18 +1,20 @@
 from pydantic import BaseModel
-from typing import Generic, TypeVar, Type, Any, Sequence, Optional, List, Dict
+from typing import Generic, TypeVar, Type, Any, Sequence, Optional, List, Dict, TYPE_CHECKING
 from sqlalchemy.orm.interfaces import ExecutableOption
 
 from zcore.exceptions.base import EntityNotFound
 from zcore.db.setup import Base
-from zcore.db.repository import BaseRepository
 from zcore.db.search import SearchRequest
+
+if TYPE_CHECKING:
+    from zcore.db.repository import BaseRepository
 
 ModelType = TypeVar("ModelType", bound=Base)        
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
 class AbstractService(Generic[ModelType]):
-    repository: BaseRepository
+    repository: "BaseRepository"
     model: Type[ModelType]
 
     async def get(
@@ -170,6 +172,6 @@ class BaseService(
     WriteServiceMixin[ModelType, CreateSchemaType, UpdateSchemaType],
     SearchServiceMixin[ModelType]
 ):
-    def __init__(self, model: Type[ModelType], repository: BaseRepository) -> None:
+    def __init__(self, model: Type[ModelType], repository: "BaseRepository") -> None:
         self.model = model
         self.repository = repository

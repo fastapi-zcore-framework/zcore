@@ -132,9 +132,13 @@ class CursorPagination(BasePagination[T]):
             padding_needed = (4 - len(cursor_str) % 4) % 4
             cursor_str += "=" * padding_needed
             decoded = base64.urlsafe_b64decode(cursor_str.encode()).decode()
-            return json_loads(decoded)
+            decoded_dict = json_loads(decoded)
+            if not isinstance(decoded_dict, dict) or "value" not in decoded_dict or "id" not in decoded_dict:
+                raise ValidationError(message="Malformed cursor parameter provided.")
+            return decoded_dict
+        except ValidationError:
+            raise
         except Exception as e:
-            # Fail-fast with clear Validation message on corrupted cursors
             raise ValidationError(message="Malformed cursor parameter provided.") from e
 
     async def paginate(
@@ -170,7 +174,6 @@ class CursorPagination(BasePagination[T]):
                 except ValueError:
                     pass
 
-            # Safe comparison logic handling nullable fields dynamically
             if self.order == "desc":
                 query = query.where(
                     or_(
