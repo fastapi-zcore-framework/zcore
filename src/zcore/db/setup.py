@@ -1,3 +1,10 @@
+"""Database Engine and Declarative Base Infrastructure.
+
+This module initializes the core SQLAlchemy engine and session factories for 
+asynchronous communication. It also provides the fundamental declarative base class 
+enriched with class-level metadata helper methods to manage object security permissions.
+"""
+
 import structlog
 from fastapi import Depends
 from contextlib import asynccontextmanager
@@ -8,8 +15,22 @@ from sqlalchemy.orm import DeclarativeBase
 
 logger = structlog.get_logger()
 
+
 @dataclass(frozen=True)
 class Actions:
+    """Action permission mappings tied to a specific database model.
+
+    This immutable container maps standard CRUD/view operational concepts to unique 
+    permission keys for use in security policy evaluation.
+
+    Attributes:
+        LISTVIEW: Security action key for listing multiple model entities.
+        VIEW: Security action key for viewing details of a single model entity.
+        CREATE: Security action key for generating a new model entity.
+        UPDATE: Security action key for updating an existing model entity.
+        DELETE: Security action key for removing a model entity.
+    """
+
     LISTVIEW: str
     VIEW: str
     CREATE: str
@@ -18,21 +39,57 @@ class Actions:
 
     @classmethod
     def actions(cls, t_name: str) -> "Actions":
+        """Generate formatted security actions keyed specifically to a table name.
+
+        Args:
+            t_name: The database table name associated with the actions.
+
+        Returns:
+            An instance of Actions containing computed permission keys.
+        """
         actions = {}
         for action in cls.__dataclass_fields__.keys():
             actions[action] = f"{t_name}:{action.lower()}"
         return cls(**actions)
 
+
 class Base(DeclarativeBase):
+    """Declarative Base class for SQLAlchemy ORM models in ZCore.
+
+    Provides a foundational configuration structure, including methods to expose standard 
+    authorization action keys mapped directly to database tables.
+    """
+
     @classmethod
     def actions(cls) -> Actions:
+        """Construct the permission actions descriptor mapped to this model's table.
+
+        Returns:
+            The standard descriptive Actions instance for the model.
+
+        Raises:
+            AttributeError: If the subclass model has not defined a `__tablename__` property.
+        """
         t_name = getattr(cls, "__tablename__", None)
         if not t_name:
             raise AttributeError(f"Model {cls.__name__} does not have a __tablename__ defined.")
         return Actions.actions(t_name)
 
+
 class DatabaseManager:
+    """Coordinator for the asynchronous database connection pool and engine lifecycles.
+
+    Manages the creation and disposal of the primary asynchronous database engine and 
+    exposes a session factory utilized across the application.
+
+    Attributes:
+        _engine: The active SQLAlchemy `AsyncEngine` instance, or None if uninitialized.
+        _session_factory: The configured factory class for creating new database sessions,
+            or None if uninitialized.
+    """
+
     def __init__(self) -> None:
+        """Initialize the DatabaseManager with empty internal engines and factories."""
         self._engine: Optional[AsyncEngine] = None
         self._session_factory: Optional[async_sessionmaker[AsyncSession]] = None
 
@@ -45,6 +102,19 @@ class DatabaseManager:
         echo: bool = False,
         **engine_kwargs: Any
     ) -> None:
+        """Configure the connection pool, engine, and session factories.
+
+        Configures parameters for SQLite and server-based relational engines
+        (such as PostgreSQL).
+
+        Args:
+            db_url: The primary database connection URL.
+            pool_size: The connection pool size for non-SQLite databases. Defaults to 5.
+            max_overflow: The max overflowing connections beyond pool size. Defaults to 10.
+            pool_recycle: Connection recycle time in seconds. Defaults to 1800.
+            echo: Verbose SQL logging flag. Defaults to False.
+            **engine_kwargs: Additional keyword arguments forwarded to `create_async_engine`.
+        """
         kwargs: dict[str, Any] = {}
         if "sqlite" not in db_url:
             kwargs["pool_size"] = pool_size
@@ -66,12 +136,23 @@ class DatabaseManager:
         logger.info("DatabaseManager successfully initialized.")
 
     async def close(self) -> None:
+        """Dispose of the database connection pool and terminate engine lifecycles."""
         if self._engine:
             await self._engine.dispose()
             logger.info("DatabaseManager engine connections closed.")
 
     @asynccontextmanager
     async def session(self) -> AsyncGenerator[AsyncSession, None]:
+        """Provide an asynchronous context manager for executing database operations.
+
+        Yields:
+            An active `AsyncSession` ready for transactional queries.
+
+        Raises:
+            RuntimeError: If called before `init_app` is executed.
+            Exception: If an error is encountered inside the session block, triggering
+                an automatic rollback before propagating.
+        """
         if not self._session_factory:
             raise RuntimeError("DatabaseManager has not been initialized. Call init_app() first.")
             
@@ -82,10 +163,18 @@ class DatabaseManager:
                 await session.rollback()
                 raise
 
+
 db_manager = DatabaseManager()
 
+
 async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Retrieve an active database session dependency for web requests.
+
+    Yields:
+        An active `AsyncSession` instance managed by FastAPI's dependency injection system.
+    """
     async with db_manager.session() as session:
         yield session
-        
+
+
 SessionDep = Annotated[AsyncSession, Depends(get_db)]

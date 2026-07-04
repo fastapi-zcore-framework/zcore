@@ -1,3 +1,10 @@
+"""Automated Web Router Scaffolding.
+
+This module provides the generic `BaseRouter` interface, which scaffolds 
+standard security-aware CRUD endpoints (POST, GET, GET_ALL, SEARCH, UPDATE, PATCH, DELETE) 
+and integrates them with services, schemas, permission requirements, and pagination handlers.
+"""
+
 import uuid
 from enum import StrEnum
 from typing import TypeVar, Generic, Type, Any, Optional, Union, TYPE_CHECKING
@@ -18,7 +25,10 @@ if TYPE_CHECKING:
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)
 UpdateSchemaType = TypeVar("UpdateSchemaType", bound=BaseModel)
 
+
 class RouteKey(StrEnum):
+    """Enumeration of standard HTTP endpoints managed by the scaffolded router."""
+
     POST = "POST"
     GET = "GET"
     GET_ALL = "GET_ALL"
@@ -27,7 +37,36 @@ class RouteKey(StrEnum):
     PATCH = "PATCH"
     DELETE = "DELETE"
 
+
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
+    """Generic web router orchestrator.
+
+    Automatically maps operations to matching database model permissions and handles
+    dependency injections and schema checks.
+
+    Attributes:
+        model: The database declarative model class.
+        create_schema: Schema class for validating entity creations.
+        update_schema: Schema class for validating entity updates.
+        schema_out: Schema class representing responses.
+        service: Business service callable class.
+        prefix: Path prefix representing the route.
+        tags: Endpoint group classification tags.
+        exclude: Explicit endpoints to bypass during route scaffolding.
+        pagination_class: Pagination engine class to construct list queries.
+        route_class: Custom routing processing class. Defaults to ZCoreAPIRoute.
+        expose_schemas: Exposes target endpoint schemas dynamically.
+        DEFAULT_PERMISSIONS: Fallback permission check configurations.
+            If set to 'AUTO', generates permissions from standard model operations.
+        POST_PERMISSIONS: Permissions required for the POST endpoint.
+        GET_PERMISSIONS: Permissions required for the GET endpoint.
+        GET_ALL_PERMISSIONS: Permissions required for the GET_ALL endpoint.
+        SEARCH_PERMISSIONS: Permissions required for the SEARCH endpoint.
+        UPDATE_PERMISSIONS: Permissions required for the UPDATE endpoint.
+        PATCH_PERMISSIONS: Permissions required for the PATCH endpoint.
+        DELETE_PERMISSIONS: Permissions required for the DELETE endpoint.
+    """
+
     model: Type[Any]
     create_schema: Optional[Type[CreateSchemaType]] = None
     update_schema: Optional[Type[UpdateSchemaType]] = None
@@ -52,6 +91,13 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     DELETE_PERMISSIONS: Optional[list[Any]] = None
 
     def __init__(self) -> None:
+        """Initialize the BaseRouter.
+
+        Performs fail-fast configuration checks and registers configured CRUD endpoints.
+
+        Raises:
+            ValueError: If the required service parameter is not configured.
+        """
         # Fail-Fast Startup Verification
         if not self.service:
             raise ValueError(f"Service class must be defined in '{self.__class__.__name__}'.")
@@ -66,13 +112,25 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         self._register_routes()
 
     def _validate_schema_configurations(self) -> None:
-        """Startup check to ensure that routes requiring input schemas are not configured as None."""
+        """Perform validation checks on configured route schema definitions.
+
+        Raises:
+            ValueError: If an active endpoint lacks required schema configurations.
+        """
         if RouteKey.POST not in self.exclude and self.create_schema is None:
             raise ValueError(f"POST route is enabled in '{self.__class__.__name__}', but 'create_schema' is None.")
         if (RouteKey.UPDATE not in self.exclude or RouteKey.PATCH not in self.exclude) and self.update_schema is None:
             raise ValueError(f"UPDATE/PATCH route is enabled in '{self.__class__.__name__}', but 'update_schema' is None.")
 
     def _get_openapi_extra(self, route_key: RouteKey) -> Optional[dict[str, Any]]:
+        """Construct OpenAPI specifications for dynamic schema endpoints.
+
+        Args:
+            route_key: Target operational key to check.
+
+        Returns:
+            An openapi metadata dictionary, or None.
+        """
         if isinstance(self.expose_schemas, bool):
             expose = self.expose_schemas
         else:
@@ -83,6 +141,14 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return None
 
     def _normalize_dependencies(self, raw_deps: Union[list[Any], Any]) -> list[Depends]:
+        """Normalize raw classes or parameters into FastAPI Depends structures.
+
+        Args:
+            raw_deps: Single dependencies or lists of security dependencies.
+
+        Returns:
+            A list containing standardized Depends wrappers.
+        """
         if raw_deps is None:
             return []
         
@@ -98,6 +164,17 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return normalized
 
     def _get_route_dependencies(self, route_key: RouteKey) -> list[Depends]:
+        """Resolve authorization security checks required for the target endpoint.
+
+        Args:
+            route_key: The target CRUD operational key.
+
+        Returns:
+            The resolved security dependencies list.
+
+        Raises:
+            ValueError: If permissions are set to AUTO but no model class is defined.
+        """
         route_perms = getattr(self, f"{route_key.value}_PERMISSIONS", None)
         
         if route_perms == []:
@@ -128,6 +205,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return self._normalize_dependencies(HasScopes(scope))
 
     def _register_routes(self) -> None:
+        """Dynamically generate and bind endpoints to the APIRouter."""
         service_callable = self.service
         service_dependency = Inject(service_callable)
 
@@ -241,14 +319,41 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             )
             
     async def create_endpoint(self, data_in: CreateSchemaType, service: BaseService) -> ResponseWrapper:
+        """Execute the POST creation transaction.
+
+        Args:
+            data_in: Validated input schema containing creation properties.
+            service: Active business service instance.
+
+        Returns:
+            The created entity wrapped in a ResponseWrapper.
+        """
         data = await service.create(data_in)
         return ResponseWrapper(data=data)
     
     async def get_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
+        """Execute a single-record query lookup.
+
+        Args:
+            id: The primary key of the target entity.
+            service: Active business service instance.
+
+        Returns:
+            The resolved model record wrapped in a ResponseWrapper.
+        """
         data = await service.get(id)
         return ResponseWrapper(data=data)
     
     async def get_all_endpoint(self, service: BaseService, pagination: Any = None) -> ResponseWrapper:
+        """Execute batch query listings, applying optional page boundaries.
+
+        Args:
+            service: Active business service instance.
+            pagination: Optional offset or keyset cursor parameters. Defaults to None.
+
+        Returns:
+            The list of resolved model records wrapped in a ResponseWrapper.
+        """
         result = await service.get_list(pagination)
         from zcore.db.pagination import PaginatedResult
         if isinstance(result, PaginatedResult):
@@ -256,6 +361,15 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return ResponseWrapper(data=result)
     
     async def search_endpoint(self, search_in: SearchRequest, service: BaseService) -> ResponseWrapper:
+        """Execute dynamic filter searches, applying mapped page limits.
+
+        Args:
+            search_in: Target filtering limits request parameters.
+            service: Active business service instance.
+
+        Returns:
+            The matching model records wrapped in a ResponseWrapper.
+        """
         pagination = None
         from zcore.db.pagination import PageNumberParams, CursorParams
         if self.pagination_class:
@@ -271,13 +385,42 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         return ResponseWrapper(data=result)
     
     async def update_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
+        """Execute a full-record entity update transaction.
+
+        Args:
+            id: Target entity identifier to update.
+            data_in: Validated schema containing updated properties.
+            service: Active business service instance.
+
+        Returns:
+            The updated model record wrapped in a ResponseWrapper.
+        """
         data = await service.update(id, data_in)
         return ResponseWrapper(data=data)
     
     async def patch_endpoint(self, id: uuid.UUID, data_in: UpdateSchemaType, service: BaseService) -> ResponseWrapper:
+        """Execute a partial record update (PATCH) transaction.
+
+        Args:
+            id: Target entity identifier to patch.
+            data_in: Validated schema containing partial changes.
+            service: Active business service instance.
+
+        Returns:
+            The updated model record wrapped in a ResponseWrapper.
+        """
         data = await service.update(id, data_in, partial=True)
         return ResponseWrapper(data=data)
     
     async def delete_endpoint(self, id: uuid.UUID, service: BaseService) -> ResponseWrapper:
+        """Execute a single-record delete transaction.
+
+        Args:
+            id: Target entity identifier to delete.
+            service: Active business service instance.
+
+        Returns:
+            A success response wrapped in a ResponseWrapper.
+        """
         await service.delete(id)
         return ResponseWrapper(message="Deleted successfully")

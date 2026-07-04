@@ -1,3 +1,11 @@
+"""Caching Abstraction and Management Layer.
+
+This module provides a unified cache manager supporting distributed caching (via Redis) 
+with an asynchronous, thread-safe local fallback (via `TTLLRUCache`). It coordinates 
+global cache lifecycles, structured serialization and deserialization, and automatically 
+spawns background memory eviction routines.
+"""
+
 import structlog
 import asyncio
 from typing import Any, Optional, TypeVar, Generic, Type, Union
@@ -18,7 +26,18 @@ except ImportError:
 _shared_redis_client: Optional[Any] = None
 _eviction_task: Optional[asyncio.Task] = None
 
+
 def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None:
+    """Initialize global distributed caching clients and local eviction workers.
+
+    Configures a shared Redis connection client if library support and server configurations 
+    are available. In addition, always schedules the active background memory eviction worker 
+    loop to periodically purge expired local records.
+
+    Args:
+        redis_url: Connection URL pointing to a Redis server instance. Defaults to None.
+        **kwargs: Connection pool parameters passed directly to the Redis client initialization.
+    """
     global _shared_redis_client, _eviction_task
     
     if REDIS_AVAILABLE and redis_url:
@@ -36,7 +55,14 @@ def init_cache(redis_url: Optional[str] = None, **kwargs: Any) -> None:
     if _eviction_task is None or _eviction_task.done():
         _eviction_task = asyncio.create_task(_start_eviction_loop(interval=60))
 
+
 async def _start_eviction_loop(interval: int = 60) -> None:
+    """Background loop invoking garbage collection routines on expired in-memory cache keys.
+
+    Args:
+        interval: Rest period duration in seconds between garbage collection sweeps. 
+            Defaults to 60.
+    """
     while True:
         try:
             await asyncio.sleep(interval)
@@ -46,7 +72,9 @@ async def _start_eviction_loop(interval: int = 60) -> None:
         except Exception as e:
             logger.error(f"Error in cache memory eviction loop: {e}")
 
+
 async def close_cache() -> None:
+    """Cancel background loops and cleanly close distributed connections."""
     global _shared_redis_client, _eviction_task
     
     if _eviction_task and not _eviction_task.done():
@@ -62,19 +90,68 @@ async def close_cache() -> None:
         except Exception as e:
             logger.error(f"Failed to cleanly close Redis cache: {e}")
 
+
 class BaseCache(Generic[T]):
+    """Generic base cache interface with transparent distributed and local fallbacks.
+
+    Keys set or read through this interface are auto-serialized and prefixed. 
+    It communicates with Redis directly if initialized, falling back cleanly onto a 
+    local `TTLLRUCache` memory store on connection failures or missing client pools.
+
+    Attributes:
+        prefix: Namespace prefix applied to all keys managed by this instance.
+        _local_cache: Thread-safe local cache backup.
+    """
+
     def __init__(self, prefix: str) -> None:
+        """Initialize a BaseCache instance.
+
+        Args:
+            prefix: Dot-path or identifier namespace prefix used to scope keys.
+        """
         self.prefix = prefix
         self._local_cache = TTLLRUCache(maxsize=1000)
 
     @property
     def redis_client(self) -> Any:
+        """Retrieve the active shared Redis client.
+
+        Returns:
+            The active Redis connection client, or None if distributed caching is uninitialized.
+        """
         return _shared_redis_client
 
     def _get_key(self, key: str) -> str:
+        """Construct a prefixed key to enforce namespace isolation.
+
+        Args:
+            key: Raw cache key query identifier.
+
+        Returns:
+            Prefixed string key.
+        """
         return f"{self.prefix}:{key}"
 
-    async def get(self, key: str, target_type: Optional[Type[BaseModel]] = None) -> Optional[Union[T, BaseModel, Any]]:
+    async def get(
+        self, 
+        key: str, 
+        target_type: Optional[Type[BaseModel]] = None
+    ) -> Optional[Union[T, BaseModel, Any]]:
+        """Retrieve and deserialize a cache record by its key.
+
+        Looks up key records from the distributed Redis client first, falling back to 
+        the local memory store if missing or unreachable. Decodes JSON values and 
+        validates them against optional target Pydantic schemas.
+
+        Args:
+            key: The unique identifier key query.
+            target_type: Optional Pydantic model class type to validate the decoded 
+                payload against. Defaults to None.
+
+        Returns:
+            The parsed data structure or validated Pydantic model instance, or None if the
+            key is not found or fails to deserialize.
+        """
         full_key = self._get_key(key)
         client = self.redis_client
         raw_val = None
@@ -103,6 +180,16 @@ class BaseCache(Generic[T]):
             return None
 
     async def set(self, key: str, value: T, ttl: int = 3600) -> None:
+        """Serialize and persist a key-value record with a Time-To-Live (TTL).
+
+        Stores the serialized string payload in Redis if available, or caches 
+        it locally in the thread-safe fallback memory buffer.
+
+        Args:
+            key: The unique identifier key to populate.
+            value: The data payload to serialize and cache.
+            ttl: Maximum cache duration in seconds. Defaults to 3600.
+        """
         full_key = self._get_key(key)
         client = self.redis_client
         
@@ -122,6 +209,11 @@ class BaseCache(Generic[T]):
         self._local_cache.set(full_key, serialized_val, ttl=ttl)
 
     async def delete(self, key: str) -> None:
+        """Evict a record from both distributed and fallback caches.
+
+        Args:
+            key: The unique key identifier to evict.
+        """
         full_key = self._get_key(key)
         client = self.redis_client
         if client:

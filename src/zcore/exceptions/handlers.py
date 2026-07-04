@@ -1,3 +1,10 @@
+"""Structured Exception Handlers.
+
+This module maps custom application exceptions (`AppException`) to standardized API JSON responses.
+It captures diagnostics, warning contexts, and metadata, formatting them using the system 
+response wrapper envelope prior to transmission.
+"""
+
 import structlog
 from fastapi import Request
 from fastapi.responses import JSONResponse
@@ -7,7 +14,21 @@ from zcore.web.response import ResponseWrapper
 
 log = structlog.get_logger()
 
+
 async def app_exception_handler(request: Request, exc: AppException) -> JSONResponse:
+    """Asynchronously intercept application exceptions and build unified JSON responses.
+
+    Captures context parameter diagnostics, outputs metrics to structured log targets, 
+    and packs the diagnostic message and metadata payload inside a structured 
+    `ResponseWrapper` response envelope.
+
+    Args:
+        request: The active incoming HTTP Request.
+        exc: The captured application exception class instance to process.
+
+    Returns:
+        A formatted JSONResponse containing the structured error metadata envelope.
+    """
     log.warning(
         "AppException raised",
         type=type(exc).__name__,

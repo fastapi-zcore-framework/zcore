@@ -1,3 +1,11 @@
+"""Database Pagination Infrastructure.
+
+This module provides pagination strategies for relational query outputs. It supports
+both Page-Number (Offset-based) pagination and high-performance Cursor (Keyset-based)
+pagination with base64 encoded metadata, integrating with Pydantic V2 schemas for request 
+parameter validation.
+"""
+
 import uuid
 import math
 import base64
@@ -15,23 +23,67 @@ from zcore.exceptions.base import ValidationError
 
 T = TypeVar("T")
 
+
 class PaginatedResult(Generic[T]):
+    """Standardized wrapper container housing paginated database entities and metadata.
+
+    Attributes:
+        data: The segment sequence of retrieved database entities.
+        meta: A dictionary containing structural page metadata (e.g., total pages,
+            cursors, sizes, limits).
+    """
+
     def __init__(self, data: Sequence[T], meta: dict[str, Any]):
+        """Initialize the PaginatedResult container.
+
+        Args:
+            data: The sequence of retrieved database items.
+            meta: Metadata parameters associated with the active pagination page.
+        """
         self.data = data
         self.meta = meta
 
+
 class PageNumberParams(BaseModel):
+    """Pydantic parameters representing page-number pagination configurations.
+
+    Attributes:
+        page: The targeted page index. Defaults to 1.
+        size: The maximum quantity of records to yield per page. Defaults to 20.
+        sort_by: The model attribute name to apply sorting on. Defaults to None.
+        sort_order: Sorting direction, either ascending ('asc') or descending ('desc').
+            Defaults to "asc".
+        include_count: If True, performs an additional database execution to count the 
+            total matching resources. Defaults to True.
+    """
+
     page: int = Field(default=1, ge=1)
     size: int = Field(default=20, ge=1, le=100)
     sort_by: Optional[str] = None
     sort_order: Literal["asc", "desc"] = "asc"
     include_count: bool = True
 
+
 class CursorParams(BaseModel):
+    """Pydantic parameters representing cursor keyset pagination configurations.
+
+    Attributes:
+        cursor: The base64-encoded keyset cursor string specifying position context. 
+            If None, fetches from the beginning. Defaults to None.
+        size: The maximum quantity of records to yield in the dataset. Defaults to 20.
+    """
+
     cursor: Optional[str] = None
     size: int = Field(default=20, ge=1, le=100)
 
+
 class BasePagination(Generic[T]):
+    """Abstract interface for constructing pagination engines.
+
+    Attributes:
+        params_class: The Pydantic model type representing valid pagination inputs.
+    """
+
     params_class: Type[BaseModel]
 
     async def paginate(
@@ -41,9 +93,30 @@ class BasePagination(Generic[T]):
         params: Any,
         model: Any
     ) -> PaginatedResult[T]:
+        """Apply pagination constraints onto an active SQLAlchemy Query.
+
+        Args:
+            session: The active asynchronous database session.
+            query: The initial SQLAlchemy Select statement.
+            params: Validated parameters corresponding to the active `params_class`.
+            model: The bound database declarative model.
+
+        Returns:
+            A PaginatedResult wrapper enclosing matching records and metadata.
+
+        Raises:
+            NotImplementedError: Raised if the subclass does not implement pagination.
+        """
         raise NotImplementedError
 
+
 class PageNumberPagination(BasePagination[T]):
+    """Offset-based page-number pagination strategy.
+
+    Computes query subsets using limits and offsets. Supports dynamic sorting and optional
+    total count calculations.
+    """
+
     params_class = PageNumberParams
 
     async def paginate(
@@ -53,6 +126,20 @@ class PageNumberPagination(BasePagination[T]):
         params: PageNumberParams,
         model: Any
     ) -> PaginatedResult[T]:
+        """Paginate results using page numbers and offsets.
+
+        Args:
+            session: The active asynchronous database session.
+            query: The database query to execute.
+            params: Parameters defining page indexes, sorting rules, and limits.
+            model: The SQLAlchemy model to parse metadata attributes from.
+
+        Returns:
+            An offset-based PaginatedResult container.
+
+        Raises:
+            ValidationError: If the requested `sort_by` field does not exist on the target model.
+        """
         page = params.page
         size = params.size
         offset = (page - 1) * size
@@ -104,14 +191,37 @@ class PageNumberPagination(BasePagination[T]):
         }
         return PaginatedResult(data=items, meta=meta)
 
+
 class CursorPagination(BasePagination[T]):
+    """Keyset-based cursor pagination strategy.
+
+    Provides stable paging execution across highly dynamic or high-throughput datasets.
+    Utilizes base64 encoded keyset strings to reference chronological positions without 
+    offset drift.
+    """
+
     params_class = CursorParams
 
     def __init__(self, cursor_field: str = "id", order: str = "desc"):
+        """Initialize the CursorPagination engine.
+
+        Args:
+            cursor_field: The model field key used to coordinate position boundaries.
+                Defaults to "id".
+            order: The sorting order ('asc' or 'desc'). Defaults to "desc".
+        """
         self.cursor_field = cursor_field
         self.order = order.lower()
 
     def _encode_cursor(self, last_item: Any) -> str:
+        """Serialize and encode an entity's coordinate parameters to base64.
+
+        Args:
+            last_item: The boundary database model record to serialize.
+
+        Returns:
+            A base64 encoded URL-safe string representation of the cursor coordinate payload.
+        """
         value = getattr(last_item, self.cursor_field, None)
         if isinstance(value, datetime):
             value = value.isoformat()
@@ -126,6 +236,17 @@ class CursorPagination(BasePagination[T]):
         return encoded.rstrip("=")
 
     def _decode_cursor(self, cursor_str: str) -> dict[str, Any] | None:
+        """Decode and parse an encoded base64 cursor token.
+
+        Args:
+            cursor_str: The base64 URL-safe cursor string value.
+
+        Returns:
+            A dictionary containing parsed "value" and "id" fields, or None if empty.
+
+        Raises:
+            ValidationError: If the cursor payload is malformed or invalid.
+        """
         if not cursor_str:
             return None
         try:
@@ -148,6 +269,21 @@ class CursorPagination(BasePagination[T]):
         params: CursorParams,
         model: Any
     ) -> PaginatedResult[T]:
+        """Paginate results using encoded keyset cursors.
+
+        Args:
+            session: The active asynchronous database session.
+            query: The database select statement.
+            params: Parameters specifying active cursor keys and page size limits.
+            model: The target database declarative model class.
+
+        Returns:
+            A keyset-based PaginatedResult container.
+
+        Raises:
+            ValidationError: If the specified cursor_field is invalid or not located 
+                on the target database model.
+        """
         size = params.size
         cursor_data = self._decode_cursor(params.cursor) if params.cursor else None
 

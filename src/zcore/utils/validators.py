@@ -1,9 +1,33 @@
+"""JSON Schema Validation Utility.
+
+This module provides tools to validate JSON documents. It integrates standard 
+`jsonschema` Draft-7 schemas to evaluate payload boundaries or check the structural 
+validity of dynamically defined schemas.
+"""
+
 from typing import Any, Optional
 from jsonschema import validate, Draft7Validator, exceptions
 
 from zcore.exceptions.base import ValidationError
 
+
 def validate_json_schema(data: Any, schema: Optional[dict[str, Any]] = None) -> None:
+    """Validate JSON data against a Draft-7 schema.
+
+    If no schema dictionary is supplied, this function evaluates the `data` itself 
+    as a schema definition, verifying that it is structurally valid according to the 
+    Draft-7 meta-schema.
+
+    Args:
+        data: The target data instance to evaluate, or a schema dictionary to check 
+            if the `schema` parameter is None.
+        schema: The target JSON Schema dictionary to validate the data against. 
+            Defaults to None.
+
+    Raises:
+        ValidationError: If the data violates schema constraints or the target 
+            schema dictionary is structurally invalid.
+    """
     if data is None:
         return
     try:
