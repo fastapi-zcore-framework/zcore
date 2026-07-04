@@ -24,7 +24,7 @@ class RepoTestUpdateSchema(BaseModel):
     name: str | None = None
     description: str | None = None
 
-class TestRepository(BaseRepository[RepoTestModel, RepoTestCreateSchema, RepoTestUpdateSchema]):
+class RepoTestRepository(BaseRepository[RepoTestModel, RepoTestCreateSchema, RepoTestUpdateSchema]):
     def __init__(self, db: Any) -> None:
         super().__init__(RepoTestModel, db)
 
@@ -45,7 +45,7 @@ async def setup_test_tables(test_engine: Any) -> AsyncGenerator[None, None]:
     ]
 )
 async def test_repo_create_and_get(db_session: Any, name: str, description: str | None) -> None:
-    repo = TestRepository(db_session)
+    repo = RepoTestRepository(db_session)
     schema = RepoTestCreateSchema(name=name, description=description)
     
     created = await repo.create(schema)
@@ -76,10 +76,10 @@ async def test_repo_create_multi_empty_and_filled(
     schemas: list[RepoTestCreateSchema],
     expect_db_hit: bool
 ) -> None:
-    repo = TestRepository(db_session)
+    repo = RepoTestRepository(db_session)
     
     spy_session = AsyncMock(wraps=db_session)
-    spy_repo = TestRepository(spy_session)
+    spy_repo = RepoTestRepository(spy_session)
 
     if not expect_db_hit:
         results = await spy_repo.create_multi(schemas)
@@ -101,7 +101,7 @@ async def test_repo_create_multi_empty_and_filled(
     ]
 )
 async def test_repo_partial_update(db_session: Any, partial: bool, expected_desc: str | None) -> None:
-    repo = TestRepository(db_session)
+    repo = RepoTestRepository(db_session)
     created = await repo.create(RepoTestCreateSchema(name="Original Name", description="Original Desc"))
 
     update_schema = RepoTestUpdateSchema(name="Updated Name")
@@ -119,7 +119,7 @@ async def test_repo_partial_update(db_session: Any, partial: bool, expected_desc
     ]
 )
 async def test_repo_delete_multi(db_session: Any, non_existent_id: int) -> None:
-    repo = TestRepository(db_session)
+    repo = RepoTestRepository(db_session)
     
     item1 = await repo.create(RepoTestCreateSchema(name="Item 1"))
     item2 = await repo.create(RepoTestCreateSchema(name="Item 2"))

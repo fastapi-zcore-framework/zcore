@@ -68,6 +68,8 @@ class SearchEngine:
                     raise ForbiddenError(message=f"Access to relation path '{path}' is restricted due to security policies.")
                 
                 parts = path.split(".")
+                if len(parts) > MAX_INCLUDE_DEPTH + 1:
+                    raise ValidationError(message=f"Relation inclusion depth of '{path}' exceeds the maximum limit of {MAX_INCLUDE_DEPTH}.")
                 
                 accumulated_path: list[str] = []
                 for part in parts:

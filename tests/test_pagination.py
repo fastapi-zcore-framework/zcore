@@ -43,7 +43,7 @@ async def test_page_number_pagination(
     expected_pages: int | None
 ) -> None:
     records = [
-        PaginationTestModel(id=i, name=f"Item {i}", created_at=datetime.datetime.utcnow())
+        PaginationTestModel(id=i, name=f"Item {i}", created_at=datetime.datetime.now())
         for i in range(1, 26)
     ]
     db_session.add_all(records)

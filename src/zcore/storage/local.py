@@ -2,6 +2,7 @@ import uuid
 import structlog
 from typing import AsyncGenerator, List, Optional
 from anyio import Path
+from pathlib import PureWindowsPath
 import aiofiles
 from fastapi import UploadFile
 
@@ -22,7 +23,8 @@ class LocalStorageProvider(StorageProvider):
 
     async def generate_path(self, filename: str, related_type: str) -> str:
         base = await Path(self.base_path).resolve(strict=False)
-        target_folder = await (Path(self.base_path) / related_type).resolve(strict=False)
+        normalized_type = PureWindowsPath(related_type).as_posix()
+        target_folder = await (Path(self.base_path) / normalized_type).resolve(strict=False)
         
         if not target_folder.is_relative_to(base):
             raise AppException("Path traversal attempt detected")
@@ -39,7 +41,6 @@ class LocalStorageProvider(StorageProvider):
         return final_path.as_posix()
 
     def _validate_file(self, file: UploadFile) -> None:
-        """Runs the upload file through the registered validators pipeline sequentially."""
         for validator in self.validators:
             validator(file)
 
@@ -64,7 +65,6 @@ class LocalStorageProvider(StorageProvider):
         filename: str, 
         related_type: str
     ) -> str:
-        # Path trajectory safeguards are strictly maintained during stream path generation.
         try:
             path = await self.generate_path(filename, related_type)
             async with aiofiles.open(path, "wb") as buffer:
@@ -80,9 +80,9 @@ class LocalStorageProvider(StorageProvider):
     async def delete(self, file_path: str) -> bool:
         try:
             base = await Path(self.base_path).resolve(strict=False)
-            path_to_delete = await Path(file_path).resolve(strict=False)
+            normalized_path = PureWindowsPath(file_path).as_posix()
+            path_to_delete = await Path(normalized_path).resolve(strict=False)
             
-            # Directory Traversal Safeguard on deletion too
             if not path_to_delete.is_relative_to(base):
                 logger.warning(f"Prevented arbitrary file deletion attempt outside base path: {file_path}")
                 return False
