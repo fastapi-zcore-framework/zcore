@@ -8,6 +8,8 @@ repo_url: https://github.com/fastapi-zcore-framework/zcore
 
 theme:
   name: material
+  logo: assets/logo.png
+  favicon: assets/favico.png
   palette:
     - media: "(prefers-color-scheme: light)"
       scheme: default
@@ -56,19 +58,53 @@ markdown_extensions:
 
 nav:
   - Home: index.md
-  - Tutorials:
-      - Quickstart: tutorials/quickstart.md
-      - First Plugin: tutorials/first-plugin.md
+  
+  - Learn (Tutorial):
+      - Overview: learn/overview.md
+      - Installation & Scaffolding: learn/installation.md
+      - "Step 1: Database Models": learn/1-db.md
+      - "Step 2: Data Schemas": learn/2-schemas.md
+      - "Step 3: Repository Layer": learn/3-repository.md
+      - "Step 4: Business Logic": learn/4-service.md
+      - "Step 5: Automated Routing": learn/5-router.md
+      - "Step 6: Domain Packaging": learn/6-plugin.md
+      - "Step 7: Framework Orchestration": learn/7-kernel.md
+      - "Step 8: Application Bootstrapping": learn/8-main.md
+      
   - How-To Guides:
-      - Dynamic Queries: how-to/database-queries.md
-      - Field Masking: how-to/field-masking.md
-      - File Upload: how-to/file-upload.md
-      - Cache Management: how-to/cache-management.md
-  - Explanation:
-      - Dependency Injection: explanation/dependency-injection.md
-      - Transaction Atomicity: explanation/transaction-atomicity.md
-      - Lifecycle Events: explanation/lifecycle-events.md
-  - Reference:
-      - API Router: reference/api-router.md
-      - Repository: reference/repository.md
-      - Configuration Settings: reference/config-settings.md
+      - JWT Authentication & Scopes: how-to/auth-setup.md
+      - Multi-Repository Transactions: how-to/multi-repo-transactions.md
+      - Dynamic Role-Based Field Masking: how-to/dynamic-field-masking.md
+      - Custom S3 Cloud Storage: how-to/custom-storage-provider.md
+      - WebSockets & Redis PubSub: how-to/websocket-pubsub.md
+      
+  - Architecture & Reference:
+      - Core & Infrastructure:
+          - Dependency Injection: features/infrastructure/di.md
+          - Framework Engine: features/infrastructure/kernel.md
+          - Kernel Events: features/infrastructure/events.md
+          - ASGI Middlewares: features/infrastructure/middleware.md
+          - Application Entry: features/infrastructure/main.md
+          - Configuration Settings: features/infrastructure/config.md
+          - CLI Scaffolding Tool: features/infrastructure/cli.md
+          - System Utilities: features/infrastructure/utils.md
+      - Data & Transactions:
+          - Database Manager: features/database/db.md
+          - Repository Pattern: features/database/repository.md
+          - Business Services: features/database/service.md
+          - Unit of Work: features/database/uow.md
+          - Database Events: features/database/db-events.md
+          - Pagination Engine: features/database/pagination.md
+          - Dynamic Search Engine: features/database/search.md
+      - Security & Shielding:
+          - Thread-Safe Context: features/security/context.md
+          - Cryptographic Protocols: features/security/security.md
+          - API Routing Mechanics: features/security/api-router.md
+          - Response Shielding & Envelopes: features/security/projection.md
+          - Centralized Exception Handler: features/security/exceptions.md
+      - Advanced Ecosystem:
+          - Distributed Caching: features/ecosystem/cache.md
+          - File Storage & Security: features/ecosystem/storage.md
+          - WebSocket Streaming: features/ecosystem/stream.md
+          
+  - Pocket Cheat Sheet: cheatsheet.md
