@@ -1,14 +1,14 @@
 <p align="center">
-  <img src="./docs/assets/banner.png" alt="ZCore Logo" width="600">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/banner.png" alt="ZCore Logo" width="600">
   <br>
   <strong>A modest and practical architectural layer built on top of FastAPI.</strong>
 </p>
 
 <p align="center">
-  <a href="https://github.com/fastapi-zcore-framework/zcore/LICENSE">
+  <a href="https://github.com/fastapi-zcore-framework/zcore/blob/master/LICENSE">
   <img src="https://img.shields.io/github/license/fastapi-zcore-framework/zcore" alt="License"></a>
   <a href="https://pypi.org/project/fastapi-zcore-framework/"><img src="https://img.shields.io/pypi/v/fastapi-zcore-framework" alt="PyPI"></a>
-  <a href="https://github.com/fastapi-zcore-framework/zcore/actions"><img src="https://img.shields.io/github/actions/workflow/status/fastapi-zcore-framework/zcore/tests.yml" alt="Build Status"></a>
+  <a href="https://github.com/fastapi-zcore-framework/zcore/actions"><img src="https://img.shields.io/github/actions/workflow/status/fastapi-zcore-framework/zcore/publish.yml" alt="Build Status"></a>
 </p>
 
 ---
@@ -39,29 +39,9 @@ ZCore was designed to bridge the gap between "writing an endpoint" and "building
 
 Understanding how a request travels through ZCore is key to mastering its architecture. The following diagram illustrates the automated orchestration from the moment a request hits the server to the final pruned response.
 
-```mermaid
-sequenceDiagram
-    participant C as Client
-    participant M as Middlewares
-    participant R as ZCoreAPIRoute
-    participant S as Service & UOW
-    participant D as Database
-    participant P as ResponseProjector
-
-    C->>M: HTTP Request
-    Note over M: Generate Correlation ID<br/>Initialize Scoped DI
-    M->>R: Route Handled
-    Note over R: Schema Analysis<br/>Restricted Field Lookup
-    R->>S: Invoke Business Logic
-    S->>D: DB Operations (via Repository)
-    Note over S: Atomic Commit via Unit of Work
-    D-->>S: Record Persisted
-    S-->>R: Return Domain Model
-    R->>P: Data Sanitization
-    Note over P: Prune Restricted Fields<br/>(e.g., owner_id, internal_notes)
-    P-->>R: Clean Data
-    R-->>C: JSON Response (Pruned)
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/request-lifecycle.png" alt="ZCore Request Lifecycle" width="700">
+</p>
 
 ---
 
@@ -110,14 +90,11 @@ zc run
 
 To explore the full capabilities of ZCore, please refer to our online documentation:
 
-> [!NOTE]
-> **[Getting Started Guide]** - Step-by-step tutorial to build your first service.
+> ℹ️ **NOTE:** **[Getting Started Guide]** - Step-by-step tutorial to build your first service.
 
-> [!TIP]
-> **[Architectural Concepts]** - Understand the inner mechanics of our Scoped DI, UOW, and the Core Kernel.
+> 💡 **TIP:** **[Architectural Concepts]** - Understand the inner mechanics of our Scoped DI, UOW, and the Core Kernel.
 
-> [!IMPORTANT]
-> For production environments, remember to generate a secure secret key using the `zc gensecret` CLI command and update your `.env` configuration file.
+> ⚠️ **IMPORTANT:** For production environments, remember to generate a secure secret key using the `zc gensecret` CLI command and update your `.env` configuration file.
 
 ---
 
