@@ -1,19 +1,10 @@
+
 <p align="center">
-  <img src="./docs/assets/banner.png" alt="ZCore Logo" width="600">
+  <img src="./assets/banner.png" alt="ZCore Logo" >
   <br>
-  <strong>A modest and practical architectural layer built on top of FastAPI.</strong>
 </p>
 
-<p align="center">
-  <a href="https://github.com/fastapi-zcore-framework/zcore/blob/master/LICENSE">
-  <img src="https://img.shields.io/github/license/fastapi-zcore-framework/zcore" alt="License"></a>
-  <a href="https://pypi.org/project/fastapi-zcore-framework/"><img src="https://img.shields.io/pypi/v/fastapi-zcore-framework" alt="PyPI"></a>
-  <a href="https://github.com/fastapi-zcore-framework/zcore/actions"><img src="https://img.shields.io/github/actions/workflow/status/fastapi-zcore-framework/zcore/tests.yml" alt="Build Status"></a>
-</p>
-
----
-
-## What is ZCore?
+# Welcome to ZCore
 
 ZCore is not a replacement for FastAPI; it is a modest and practical architectural layer built on top of it. While FastAPI provides the high-performance engine for handling HTTP requests, ZCore provides the "chassis"—a structured environment that solves common challenges in medium-to-large scale applications such as dependency management, transaction integrity, and data leakage prevention.
 
@@ -27,7 +18,7 @@ ZCore was designed to bridge the gap between "writing an endpoint" and "building
 
 | Feature | Standard FastAPI Challenge | The ZCore Approach |
 | :--- | :--- | :--- |
-| **Dependency Injection** | Manual wiring and complex `Depends` chains. | Automated **Scoped IoC** with constructor injection. |
+| **Dependency Injection** | Manual dependency registration and deeply nested `Depends` functions. | Automated **Scoped IoC** with constructor injection. |
 | **Data Security** | Manual filtering of Pydantic models for different users. | Context-aware **Response Pruning** via `ResponseProjector`. |
 | **Transactions** | Scatterred `.commit()` calls leading to partial failures. | Centralized **Unit of Work** (UOW) for atomic operations. |
 | **Project Structure** | Inconsistent layouts across different teams. | Modular **Plugin System** and standardized CLI scaffolding. |
@@ -63,41 +54,11 @@ sequenceDiagram
     R-->>C: JSON Response (Pruned)
 ```
 
----
-
-## ⚡ Quick Start
-
-### 1. Installation
-Set up a clean virtual environment and install ZCore with all optional dependencies:
-
-```bash
-python -m venv .venv
-source .venv/bin/activate  # On Windows: .venv\Scripts\activate
-pip install fastapi-zcore-framework[all]
-```
-
-### 2. Scaffold a Project
-Initialize your project and generate a structured domain module using our command-line utility:
-
-```bash
-# Initialize project workspace
-zc init product_api
-cd product_api
-
-# Scaffold a domain app with boilerplate templates
-zc startapp products -t
-```
-
-### 3. Run the Development Server
-Launch the local Uvicorn development server:
-
-```bash
-zc run
-```
+💡 **Note:** `ZCoreAPIRoute` acts as a smart gateway, automatically intercepting requests and responses to handle schema inspection and dynamic field pruning without cluttering your route handlers.
 
 ---
 
-## 📚 Core Pillars at a Glance
+## Core Pillars at a Glance
 
 *   **⚡ Scoped IoC Container:** Manage object lifecycles (Singleton, Transient, or Scoped) with ease. Scoped dependencies are automatically cleared at the end of every HTTP request to prevent memory pollution.
 *   **🛡️ Secure Search Engine:** A dynamic query builder that supports nested filters and eager-loading, while automatically blocking access to restricted database columns based on security policies.
@@ -106,21 +67,23 @@ zc run
 
 ---
 
-## 📖 Documentation & Learning
+## Where to Start?
 
-To explore the full capabilities of ZCore, please refer to our online documentation:
+Choose the path that best fits your current needs:
 
-> [!NOTE]
-> **[Getting Started Guide]** - Step-by-step tutorial to build your first service.
+!!! info "🚀 Quick Start"
+    New to ZCore? Learn how to initialize your first project and create a modular app using our CLI tool in under 5 minutes.
+    [View Quick Start Guide](learn/overview.md)
 
-> [!TIP]
-> **[Architectural Concepts]** - Understand the inner mechanics of our Scoped DI, UOW, and the Core Kernel.
+!!! tip "🧠 Architectural Deep Dive"
+    Want to understand the "Under the Hood" mechanics? Explore our detailed documentation on Scoped DI, UOW, and the Kernel.
+    [Explore Core Concepts](features/infrastructure/di/)
 
-> [!IMPORTANT]
-> For production environments, remember to generate a secure secret key using the `zc gensecret` CLI command and update your `.env` configuration file.
+!!! warning "📜 Cheat Sheet"
+    Already familiar with ZCore? Use our quick reference for syntax, CLI commands, and standard repository methods.
+    [Open Cheat Sheet](cheatsheet.md)
 
 ---
-
 <p align="center">
     <small>ZCore is licensed under the Apache License 2.0. Built with ☕ and architectural rigor.</small>
 </p>

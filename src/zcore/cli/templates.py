@@ -38,7 +38,7 @@ app.add_exception_handler(AppException, app_exception_handler)
 async def root():
     return {
         "status": "healthy",
-        "framework": "ZCore Enterprise",
+        "framework": "ZCore",
         "environment": settings.ENVIRONMENT
     }
 

@@ -10,7 +10,7 @@ def main() -> None:
     This function is bound to the 'zc' shell command.
     """
     parser = argparse.ArgumentParser(
-        description="ZCore Enterprise Framework CLI Tool",
+        description="ZCore CLI Tool",
         prog="zc"
     )
     
@@ -27,12 +27,12 @@ def main() -> None:
     
     init_parser = subparsers.add_parser(
         "init", 
-        help="Initializes a new ZCore enterprise project structure"
+        help="Initializes a new ZCore project structure"
     )
     init_parser.add_argument(
         "name", 
         type=str, 
-        help="Name of your enterprise project directory (e.g., core_api)"
+        help="Name of your project directory (e.g., core_api)"
     )
 
     startapp_parser = subparsers.add_parser(
