@@ -5,7 +5,7 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/fastapi-zcore-framework/zcore/blob/master/LICENSE">
+  <a href="https://github.com/fastapi-zcore-framework/zcore/LICENSE">
   <img src="https://img.shields.io/github/license/fastapi-zcore-framework/zcore" alt="License"></a>
   <a href="https://pypi.org/project/fastapi-zcore-framework/"><img src="https://img.shields.io/pypi/v/fastapi-zcore-framework" alt="PyPI"></a>
   <a href="https://github.com/fastapi-zcore-framework/zcore/actions"><img src="https://img.shields.io/github/actions/workflow/status/fastapi-zcore-framework/zcore/tests.yml" alt="Build Status"></a>
