@@ -1,7 +1,7 @@
 site_name: ZCore
 site_description: Minimalist, architectural framework built on top of FastAPI.
 site_author: Ali Alf Ostovar
-site_url: https://fastapi-zcore-framework.github.io/docs
+site_url: https://fastapi-zcore-framework.github.io/zcore
 
 repo_name: fastapi-zcore-framework/zcore
 repo_url: https://github.com/fastapi-zcore-framework/zcore
