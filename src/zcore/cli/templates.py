@@ -27,6 +27,8 @@ app = FastAPI(
     lifespan=kernel.lifespan
 )
 
+kernel.setup(app)
+
 # Load Core Architectural Middlewares
 app.add_middleware(RequestLogMiddleware)
 app.add_middleware(ScopedDependencyMiddleware)
@@ -41,11 +43,6 @@ async def root():
         "framework": "ZCore",
         "environment": settings.ENVIRONMENT
     }
-
-# Dynamic router registration (Auto-scaffolded apps will hook into here)
-# Example:
-# from order_management.routers import router as order_router
-# app.include_router(order_router)
 """
 
 ENV_TEMPLATE = """ENVIRONMENT=development
@@ -191,8 +188,10 @@ class {ModelName}Plugin(Plugin):
 
     def setup(self, app: FastAPI) -> None:
         # Wire this module's sub-router directly to the central FastAPI app
+        
         # from .routers import router_instance
         # app.include_router(router_instance.router)
+        pass
 
     async def before_startup(self) -> None:
         # Executes before any other plugin starts
