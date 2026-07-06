@@ -1,0 +1,67 @@
+name: Publish ZCore
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - run: python -m pip install --upgrade pip
+
+      - run: pip install hatch
+
+      - run: hatch run test
+
+  compile:
+    needs: validate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - run: python -m pip install --upgrade pip
+
+      - run: pip install hatch
+
+      - run: hatch build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zcore-dist
+          path: dist/
+          retention-days: 1
+
+  distribute:
+    needs: compile
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/fastapi-zcore-framework
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: zcore-dist
+          path: dist/
+
+      - uses: pypa/gh-action-pypi-publish@release/v1

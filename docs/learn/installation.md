@@ -1,0 +1,84 @@
+# 📦 Installation & Project Scaffolding
+
+Before we write code, we need to set up our Python virtual environment, install the ZCore framework, and scaffold the initial project directories.
+
+---
+
+## 📋 Prerequisites
+
+*   🐍 Python 3.11 or higher.
+*   📦 `pip` (Python package installer).
+
+---
+
+## 🛠️ Step 1: Install ZCore
+
+We suggest setting up a clean virtual environment first to isolate your dependencies:
+
+```bash
+# Create and activate virtual environment
+python -m venv .venv
+source .venv/bin/activate  # On Windows, use: .venv\Scripts\activate
+
+# Install ZCore with all optional dependencies (SQLAlchemy, Redis, Crypto, etc.)
+pip install fastapi-zcore-framework[all]
+```
+
+---
+
+## 🏗️ Step 2: Initialize the Project Blueprint
+
+ZCore comes equipped with a modest command-line utility, `zc`, to manage code scaffolding. Let's create our project shell:
+
+```bash
+zc init product_api
+cd product_api
+```
+
+This command generates a structured layout:
+
+*   📁 `main.py`: The system entry point and kernel bootstrapping.
+*   📁 `.env`: Local environment settings.
+*   📁 `requirements.txt`: Standard project requirements.
+*   📁 `.gitignore`: Safe exclusion defaults for Git.
+
+---
+
+## 🚀 Step 3: Scaffold the Products Domain Module
+
+Now we will generate the boilerplate code for our modular product system. Run the following command:
+
+```bash
+zc startapp products -t
+```
+
+The `-t` flag instructs the CLI to populate the files with scaffolding templates.
+
+| Generated File | Responsibility |
+| :--- | :--- |
+| 📝 `products/__init__.py` | Package namespace initialization. |
+| 📝 `products/models.py` | SQLAlchemy database model definition. |
+| 📝 `products/schemas.py` | Pydantic data contract validation rules. |
+| 📝 `products/repositories.py` | Data access wrapper matching Pydantic to SQL. |
+| 📝 `products/services.py` | Domain service layer to orchestrate business transactions. |
+| 📝 `products/routers.py` | Web layer mapping HTTP routes to services. |
+| 📝 `products/plugin.py` | Kernel wrapper that registers the app module. |
+
+---
+
+## 💻 CLI Reference Guide
+
+For quick reference, here are the most common commands available in the ZCore CLI tool:
+
+| Command | Usage | Description |
+| :--- | :--- | :--- |
+| `zc init <name>` | `zc init core_api` | Creates a new core project directory. |
+| `zc startapp <name>` | `zc startapp orders` | Creates an empty application module. |
+| `zc startapp <name> -t` | `zc startapp payments -t` | Scaffolds a module with boilerplates. |
+| `zc run` | `zc run` | Launches the local Uvicorn reload server. |
+| `zc gensecret` | `zc gensecret` | Generates a secure, 64-character secret key. |
+
+---
+
+!!! tip "💡 Development Mode"
+    Keep your terminal open. In the next steps, we will write our code inside the generated `products/` folder to build out our Product Management System.

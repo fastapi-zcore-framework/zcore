@@ -1,0 +1,93 @@
+[build-system]
+requires = ["hatchling", "hatch-vcs"]
+build-backend = "hatchling.build"
+
+[project]
+name = "fastapi-zcore-framework"
+dynamic = ["version"]
+description = "An opinionated architectural framework built on top of FastAPI that provides production-ready architecture, repository abstractions, scoped dependency injection, a secure dynamic query engine, and consistent transaction management."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "Apache License 2.0" }
+authors = [
+    { name = "Ali Alf Ostovar", email = "240363843+alialfostovar@users.noreply.github.com" }
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Framework :: FastAPI",
+    "Topic :: Software Development :: Libraries :: Application Frameworks",
+]
+dependencies = [
+    "fastapi>=0.110.0",
+    "pydantic>=2.6.0",
+    "pydantic-settings>=2.2.0",
+    "structlog>=24.1.0",
+    "anyio>=4.3.0",
+    "jsonschema>=4.21.0",
+    "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+db = [
+    "sqlalchemy[asyncio]>=2.0.28",
+    "aiosqlite>=0.20.0",
+]
+redis = [
+    "redis>=5.0.3",
+]
+cache = [
+    "redis>=5.0.3",
+]
+storage = [
+    "aiofiles>=23.2.1",
+]
+crypto = [
+    "argon2-cffi>=23.1.0",
+    "pyjwt>=2.8.0",
+]
+docs = [
+    "mkdocs>=1.5.0",
+    "mkdocs-material>=9.5.0",
+    "mkdocstrings[python]>=0.24.0",
+    "mkdocs-gen-files>=0.5.0",
+    "mkdocs-literate-nav>=0.6.0",
+    "mkdocs-section-index>=0.3.0"
+]
+all = [
+    "sqlalchemy[asyncio]>=2.0.28",
+    "aiosqlite>=0.20.0",
+    "redis>=5.0.3",
+    "aiofiles>=23.2.1",
+    "argon2-cffi>=23.1.0",
+    "pyjwt>=2.8.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/fastapi-zcore-framework/zcore"
+Repository = "https://github.com/fastapi-zcore-framework/zcore"
+Documentation = "https://fastapi-zcore-framework.github.io/docs"
+"Bug Tracker" = "https://github.com/fastapi-zcore-framework/zcore/issues"
+
+[project.scripts]
+zc = "zcore.cli:main"
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/zcore"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"
+testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+ignore_missing_imports = true
+exclude = ["tests/", "example/"]
