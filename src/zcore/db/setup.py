@@ -13,6 +13,8 @@ from typing import AsyncGenerator, Any, Optional, Annotated
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession, AsyncEngine
 from sqlalchemy.orm import DeclarativeBase
 
+from zcore.kernel.di import container
+
 logger = structlog.get_logger()
 
 
@@ -173,8 +175,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Yields:
         An active `AsyncSession` instance managed by FastAPI's dependency injection system.
     """
-    async with db_manager.session() as session:
-        yield session
+    session = container.resolve(AsyncSession)
+    yield session
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
