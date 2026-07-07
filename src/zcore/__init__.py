@@ -1,10 +1,79 @@
-from zcore.kernel.di import Inject, container
-from zcore.kernel.engine import Kernel
+from typing import TYPE_CHECKING ,Any
 from zcore.config import settings
 
+if TYPE_CHECKING:
+    from zcore.kernel.engine import Kernel
+    from zcore.kernel.di import container, Inject
+    from zcore.db.setup import Base, SessionDep, db_manager, get_db
+    from zcore.db.repository import BaseRepository
+    from zcore.db.search import SearchRequest
+    from zcore.db.uow import UnitOfWork
+    from zcore.service.base import BaseService
+    from zcore.web.base_router import BaseRouter
+    from zcore.web.response import ResponseWrapper
+    from zcore.web.api_router import ZCoreAPIRoute
+
 __all__ = [
-    "Inject",
-    "container",
-    "Kernel",
-    "settings",
+    'Inject',
+    'container',
+    'Kernel',
+    'settings',
+    'Base',
+    'SessionDep',
+    'db_manager',
+    'get_db',
+    'BaseRepository',
+    'SearchRequest',
+    'UnitOfWork',
+    'BaseService',
+    'BaseRouter',
+    'ResponseWrapper',
+    'ZCoreAPIRoute'
 ]
+    
+
+def __getattr__(name: str) -> Any:
+    if name == "Kernel":
+        from zcore.kernel.engine import Kernel
+        return Kernel
+    if name == "container":
+        from zcore.kernel.di import container
+        return container
+    if name == "Inject":
+        from zcore.kernel.di import Inject
+        return Inject
+    if name == "Base":
+        from zcore.db.setup import Base
+        return Base
+    if name == "SessionDep":
+        from zcore.db.setup import SessionDep
+        return SessionDep
+    if name == "db_manager":
+        from zcore.db.setup import db_manager
+        return db_manager
+    if name == "get_db":
+        from zcore.db.setup import get_db
+        return get_db
+    if name == "BaseRepository":
+        from zcore.db.repository import BaseRepository
+        return BaseRepository
+    if name == "UnitOfWork":
+        from zcore.db.uow import UnitOfWork
+        return UnitOfWork
+    if name == "SearchRequest":
+        from zcore.db.search import SearchRequest
+        return SearchRequest
+    if name == "BaseService":
+        from zcore.service.base import BaseService
+        return BaseService
+    if name == "BaseRouter":
+        from zcore.web.base_router import BaseRouter
+        return BaseRouter
+    if name == "ResponseWrapper":
+        from zcore.web.response import ResponseWrapper
+        return ResponseWrapper
+    if name == "ZCoreAPIRoute":
+        from zcore.web.api_router import ZCoreAPIRoute
+        return ZCoreAPIRoute
+    
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

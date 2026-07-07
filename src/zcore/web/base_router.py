@@ -11,6 +11,7 @@ from typing import TypeVar, Generic, Type, Any, Optional, Union, TYPE_CHECKING
 from pydantic import BaseModel
 from fastapi import APIRouter, status, Depends
 from fastapi.routing import APIRoute
+from fastapi.params import Depends as DependsClass
 
 from zcore.security.permissions import HasScopes
 from zcore.web.response import ResponseWrapper
@@ -140,7 +141,7 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             return {"expose_schema": True}
         return None
 
-    def _normalize_dependencies(self, raw_deps: Union[list[Any], Any]) -> list[Depends]:
+    def _normalize_dependencies(self, raw_deps: Union[list[Any], Any]) -> list[DependsClass]:
         """Normalize raw classes or parameters into FastAPI Depends structures.
 
         Args:
@@ -153,10 +154,10 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             return []
         
         deps_list = raw_deps if isinstance(raw_deps, list) else [raw_deps]
-        normalized: list[Depends] = []
+        normalized: list[DependsClass] = []
         
         for dep in deps_list:
-            if isinstance(dep, Depends):
+            if isinstance(dep, DependsClass):
                 normalized.append(dep)
             else:
                 normalized.append(Depends(dep))
