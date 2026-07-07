@@ -138,13 +138,14 @@ class {ModelName}Response({ModelName}Base):
     model_config = ConfigDict(from_attributes=True)
 """
 
-REPOSITORY_TEMPLATE = """from zcore import BaseRepository, SessionDep
+REPOSITORY_TEMPLATE = """from zcore import BaseRepository
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from .models import {ModelName}
 from .schemas import {ModelName}Create, {ModelName}Update
 
 class {ModelName}Repository(BaseRepository[{ModelName}, {ModelName}Create, {ModelName}Update]):
-    def __init__(self, db: SessionDep):
+    def __init__(self, db: AsyncSession):
         super().__init__(model={ModelName}, db=db)
 """
 

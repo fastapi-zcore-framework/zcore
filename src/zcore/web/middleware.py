@@ -15,6 +15,8 @@ from starlette.types import ASGIApp, Scope, Receive, Send
 
 from zcore.kernel.di import _current_scope_id, container
 from zcore.context.context import request_context
+from zcore.db.setup import db_manager
+from sqlalchemy.ext.asyncio import AsyncSession
 
 log = structlog.get_logger()
 REQUEST_ID_PATTERN = re.compile(r"^[a-zA-Z0-9\-\.\_\:]{8,64}$")
@@ -139,7 +141,9 @@ class ScopedDependencyMiddleware:
         # Capture background tasks context if integrated with FastAPI
         # We defer scope teardown if there are pending background tasks
         try:
-            await self.app(scope, receive, send)
+            async with db_manager.session() as session:
+                container.register_scoped_instance(AsyncSession, session)
+                await self.app(scope, receive, send)
         finally:
             # Safely clear the active IoC scope
             container.clear_scope(scope_id)

@@ -8,7 +8,7 @@ It supports dynamic pagination, eager load optimization, and field pruning.
 
 from pydantic import BaseModel
 from typing import TYPE_CHECKING, Generic, TypeVar, Type, Any, Sequence, Optional, List
-from sqlalchemy import select, inspect
+from sqlalchemy import select, inspect, Select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.interfaces import ExecutableOption
 from sqlalchemy.orm import load_only
@@ -47,6 +47,25 @@ class AbstractRepository(Generic[ModelType]):
     pk: Any
     pk_name: str
     cursor_field: str
+
+    def _get_base_query(self) -> Select:
+        """Construct the initial select statement for query operations.
+
+        Returns:
+            The base Select statement.
+        """
+        return select(self.model)
+
+    def _extend_query(self, query: Select) -> Select:
+        """Apply additional clauses or modifications to the active query.
+
+        Args:
+            query: The active SQLAlchemy Select query statement.
+
+        Returns:
+            The modified Select statement.
+        """
+        return query
 
     async def get(
         self, 
@@ -131,7 +150,8 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
         Returns:
             The retrieved model instance, or None if not found.
         """
-        query = select(self.model).where(self.pk == id)
+        query = self._get_base_query().where(self.pk == id)
+        query = self._extend_query(query)
         if fields:
             query = query.options(load_only(*fields))
         if options:
@@ -162,7 +182,8 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
         if not ids:
             return []
             
-        query = select(self.model).where(self.pk.in_(ids))
+        query = self._get_base_query().where(self.pk.in_(ids))
+        query = self._extend_query(query)
         if fields:
             query = query.options(load_only(*fields))
         if options:
@@ -188,7 +209,8 @@ class ReadRepositoryMixin(AbstractRepository[ModelType]):
             A list of matching records, or a paginated response container containing 
             items and metadata.
         """
-        query = select(self.model)
+        query = self._get_base_query()
+        query = self._extend_query(query)
         if fields:
             query = query.options(load_only(*fields))
         if options:
@@ -364,7 +386,9 @@ class SearchRepositoryMixin(AbstractRepository[ModelType]):
         """
         from zcore.db.search import SearchEngine
         engine = SearchEngine(self.model)
-        query = engine.build_base_query(search_in)
+        base_query = self._get_base_query()
+        query = engine.build_base_query(search_in, base_query=base_query)
+        query = self._extend_query(query)
         if pagination is None:
             result = await self.db.execute(query)
             return result.scalars().all()
