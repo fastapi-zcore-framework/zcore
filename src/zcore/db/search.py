@@ -431,11 +431,12 @@ class SearchEngine:
                 query = query.options(loader)
         return query
 
-    def build_base_query(self, search_in: SearchRequest) -> Select:
+    def build_base_query(self, search_in: SearchRequest, base_query: Optional[Select] = None) -> Select:
         """Parse search inputs, validate policies, and construct the base Select statement.
 
         Args:
             search_in: The user-supplied search and filter request model.
+            base_query: Optional base Select query statement to extend. Defaults to None.
 
         Returns:
             A secure, compiled SQLAlchemy SELECT statement complete with filtering, 
@@ -443,7 +444,7 @@ class SearchEngine:
         """
         self._validate_request(search_in)
         
-        query = select(self.model)
+        query = base_query if base_query is not None else select(self.model)
         
         if search_in.include:
             query = self._apply_includes(query, search_in.include)
