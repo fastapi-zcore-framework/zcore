@@ -126,17 +126,17 @@ class IoCContainer:
             return self._singletons[interface]
 
         scope_id = _current_scope_id.get()
-        if scope_id and interface in self._scoped_definitions:
+        if scope_id:
             current_instances = _scoped_instances.get()
-            if interface not in current_instances:
-                # Resolve with circular dependency detection stack
+            if interface in current_instances:
+                return current_instances[interface]
+                
+            if interface in self._scoped_definitions:
                 resolved_instance = self._scoped_definitions[interface](_stack)
-                # Store in ContextVar dict (thread/coroutine safe)
                 new_instances = dict(current_instances)
                 new_instances[interface] = resolved_instance
                 _scoped_instances.set(new_instances)
                 return resolved_instance
-            return current_instances[interface]
 
         if interface in self._factories:
             return self._factories[interface](_stack)
@@ -249,7 +249,7 @@ class Injector:
         """
         self.interface = interface
 
-    def __call__(self) -> Any:
+    async def __call__(self) -> Any:
         """Resolve and return the configured interface class.
 
         Returns:

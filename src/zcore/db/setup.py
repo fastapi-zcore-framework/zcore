@@ -175,9 +175,8 @@ async def get_db() -> AsyncGenerator[AsyncSession, None]:
     Yields:
         An active `AsyncSession` instance managed by FastAPI's dependency injection system.
     """
-    async with db_manager.session() as session:
-        container.register_scoped_instance(AsyncSession, session)
-        yield session
+    session = container.resolve(AsyncSession)
+    yield session
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_db)]
