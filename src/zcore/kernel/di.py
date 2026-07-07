@@ -8,7 +8,7 @@ against cyclic dependencies.
 
 import inspect
 from contextvars import ContextVar
-from typing import Any, Callable, Dict, Type, TypeVar, Optional, Set, List, get_type_hints
+from typing import Any, Callable, Dict, Type, TypeVar, Optional, Set, List, get_type_hints, get_origin, get_args, Annotated
 from fastapi import Depends
 
 T = TypeVar("T")
@@ -74,6 +74,25 @@ class IoCContainer:
             implementation: The target implementation class to instantiate.
         """
         self._scoped_definitions[interface] = lambda stack=None: self._auto_wire(implementation, stack)
+
+    def register_scoped_instance(self, interface: Type[Any], instance: Any) -> None:
+        """Register a pre-constructed instance directly into the active request scope.
+
+        Args:
+            interface: The interface or class type to map against.
+            instance: The active object instance to bind.
+
+        Raises:
+            DIException: If registered outside of an active scope boundary.
+        """
+        scope_id = _current_scope_id.get()
+        if scope_id:
+            current_instances = _scoped_instances.get()
+            new_instances = dict(current_instances)
+            new_instances[interface] = instance
+            _scoped_instances.set(new_instances)
+        else:
+            raise DIException("Cannot register scoped instance outside of an active scope.")
 
     def register_transient(self, interface: Type[Any], implementation: Type[Any]) -> None:
         """Register a class bound to a transient lifecycle.
@@ -186,6 +205,10 @@ class IoCContainer:
                 annotation = type_hints.get(name, param.annotation)
                 if annotation is inspect.Parameter.empty:
                     continue
+                
+                if get_origin(annotation) is Annotated:
+                    annotation = get_args(annotation)[0]
+                    
                 dependencies.append(annotation)
 
             # Warm cache for subsequent requests (reduces reflection overhead)

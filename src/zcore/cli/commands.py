@@ -45,6 +45,10 @@ def init_project(project_name: str) -> None:
     for filename, content in files_to_create.items():
         create_file(project_dir / filename, content)
         
+    db_file = project_dir / "zcore_dev.db"
+    db_file.touch()
+    print(f"✅ Created: {db_file}")
+        
     print(f"\n🎉 Project '{project_name}' initialized successfully!")
     print(f"👉 Run: 'cd {project_name}' and run 'python -m zcore.cli startapp <app_name>' to generate a plugin!")
 
