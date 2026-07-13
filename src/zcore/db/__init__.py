@@ -1,4 +1,4 @@
-from zcore.db.setup import Base, db_manager, get_db, SessionDep
+from zcore.db.setup import Base, db_manager, get_db, SessionDep, Actions
 from zcore.db.repository import BaseRepository, AbstractRepository
 from zcore.db.uow import UnitOfWork
 from zcore.db.search import SearchRequest, SearchEngine
@@ -30,4 +30,5 @@ __all__ = [
     "SearchEngine",
     "register_db_event_dispatcher",
     "dispatch_db_event",
+    'Actions',
 ]

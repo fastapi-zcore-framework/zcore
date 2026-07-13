@@ -97,10 +97,11 @@ class Employee(Base):
     stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
 ```
 
-For the web layer, assign the permissions on the corresponding lifecycle actions:
+For the web layer, inject the security restrictions via the `get_route_dependencies` method:
 
 ```python
 # routers.py
+from typing import Any
 from zcore.web.base_router import BaseRouter, RouteKey
 from zcore.db.pagination import PageNumberPagination
 
@@ -118,10 +119,12 @@ class EmployeeRouter(BaseRouter[EmployeeCreate, EmployeeUpdate]):
     
     prefix = "/employees"
     tags = ["Employees"]
-    
-    # Apply security restrictions as route dependencies
-    GET_PERMISSIONS = [Depends(apply_security_field_restrictions)]
-    GET_ALL_PERMISSIONS = [Depends(apply_security_field_restrictions)]
+
+    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+        """Inject field restriction dependencies for view operations."""
+        if route_key in (RouteKey.GET, RouteKey.GET_ALL):
+            return [Depends(apply_security_field_restrictions)]
+        return super().get_route_dependencies(route_key, action)
 ```
 
 ---
