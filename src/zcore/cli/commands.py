@@ -112,9 +112,15 @@ def run_server() -> None:
                             port = val
 
     print(f"📡 Starting ZCore Dev Server on {host}:{port}...")
+    
+    env = os.environ.copy()
+    current_pythonpath = env.get("PYTHONPATH", "")
+    env["PYTHONPATH"] = f".{os.pathsep}{current_pythonpath}" if current_pythonpath else "."
+
     try:
         subprocess.run(
             [sys.executable, "-m", "uvicorn", "main:app", f"--host={host}", f"--port={port}", "--reload"],
+            env=env,
             check=True
         )
     except KeyboardInterrupt:

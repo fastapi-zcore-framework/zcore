@@ -5,6 +5,10 @@ We have reached the final modest step of our bottom-up quickstart guide. In this
 Open `main.py` and replace its contents with the following assembly:
 
 ```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from fastapi import FastAPI
 from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware

@@ -1,4 +1,8 @@
-MAIN_PY_TEMPLATE = """from fastapi import FastAPI
+MAIN_PY_TEMPLATE = """import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from fastapi import FastAPI
 from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
 from zcore.exceptions import app_exception_handler, AppException
@@ -45,7 +49,8 @@ async def root():
     }
 """
 
-ENV_TEMPLATE = """ENVIRONMENT=development
+ENV_TEMPLATE = """PYTHONPATH=.
+ENVIRONMENT=development
 PROJECT_NAME="{project_name}"
 DATABASE_URL=sqlite+aiosqlite:///zcore_dev.db
 SECRET_KEY="{secret_key}"
