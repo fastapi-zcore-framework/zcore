@@ -104,6 +104,11 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             raise ValueError(f"POST route is enabled in '{self.__class__.__name__}', but 'create_schema' is None.")
         if (RouteKey.UPDATE not in self.exclude or RouteKey.PATCH not in self.exclude) and self.update_schema is None:
             raise ValueError(f"UPDATE/PATCH route is enabled in '{self.__class__.__name__}', but 'update_schema' is None.")
+        
+        if not getattr(self, "model", None):
+            active_standard_routes = set(RouteKey) - (self.exclude or set())
+            if active_standard_routes:
+                raise ValueError(f"Model class must be defined in '{self.__class__.__name__}' to resolve route actions.")
 
     def _get_openapi_extra(self, route_key: RouteKey) -> Optional[dict[str, Any]]:
         """Construct OpenAPI specifications for dynamic schema endpoints.

@@ -74,7 +74,7 @@ class Zchema(BaseModel):
                         cls._prune_data(item, remaining_paths) if isinstance(item, dict) else item
                         for item in data[key]
                     ]
-            return data
+        return data
 
     @classmethod
     def __get_pydantic_json_schema__(
