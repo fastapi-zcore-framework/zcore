@@ -146,5 +146,7 @@ class ZCoreAPIRoute(APIRoute):
                     else:
                         response.headers["vary"] = ", ".join(new_vary_elements)
                 return response
+            
+            return response
 
         return custom_route_handler
