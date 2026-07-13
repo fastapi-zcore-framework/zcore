@@ -31,10 +31,32 @@ graph TD
 
 ## 🛡️ Safe Context Setters
 
-To ensure data integrity, ZCore’s context setters perform two modest but important transformations:
+To ensure data integrity, ZCore's context setters perform two modest but important transformations:
 
 1.  **UUID Normalization**: When you set a user ID, ZCore automatically converts string inputs into proper `uuid.UUID` objects. This prevents "type mismatch" errors in your database queries later.
 2.  **Immutability Enforcement**: The `set_restricted_fields` helper converts lists or sets into a `frozenset`. This ensures that once a request starts, the list of restricted fields cannot be accidentally modified by other parts of the application.
+
+---
+
+## 📋 Restricted Fields Syntax
+
+Restricted fields are defined using the `{db_name}.{field}` syntax. The `db_name` corresponds to the `__db_name__` class attribute defined on your `Zchema` subclass:
+
+```python
+# Setting restricted fields with domain-specific namespaces
+set_restricted_fields({
+    "user.email",        # Restricts the "email" field in the "user" domain
+    "product.price",     # Restricts the "price" field in the "product" domain
+    "employee.salary"    # Restricts the "salary" field in the "employee" domain
+})
+```
+
+!!! tip "💡 Why `{db_name}.{field}`?"
+    The previous `resource.` prefix syntax caused namespace collisions across different domains. The new `{db_name}.{field}` syntax ensures strict domain boundary isolation, preventing fields in the `billing` module from accidentally affecting fields in the `crm` module.
+
+### 🔄 Backward Compatibility
+
+The old `resource.` prefix syntax is still supported for backward compatibility. ZCore normalizes `resource.<field>` paths by stripping the `resource.` prefix before resolving them against `__db_name__`. However, migrating to the new `{db_name}.{field}` syntax is strongly recommended.
 
 ---
 
@@ -60,7 +82,7 @@ from zcore.context import request_context, get_current_user_id
 # 1. Define the context boundary
 with request_context(
     user_id="d3b07384-d113-495d-9c31-72f1aa11a43a", 
-    fields=["resource.internal_notes"]
+    fields=["employee.salary", "employee.internal_notes"]
 ):
     # 2. Any function called inside here can access the context
     uid = get_current_user_id()

@@ -10,31 +10,49 @@ Instead of writing separate endpoints or complex database views for each role, y
 
 ## 🛠️ The ZCore Solution
 
-We suggest using ZCore's thread-safe `restricted_fields_context` along with the automated `ResponseProjector` layer. This setup intercepts API responses and dynamically prunes restricted fields before they are serialized and returned to the client.
+We suggest using ZCore's `Zchema` base class along with the thread-safe `restricted_fields_context`. The `Zchema` class automatically intercepts schema generation, input validation, and response serialization to prune restricted fields — all without any web-layer middleware.
 
 ```mermaid
 graph TD
     Request[Incoming API Request] -->|Extract Role| Check{Is User Admin?}
-    Check -->|No: Standard User| Bind[restricted_fields_context: add salary & key]
+    Check -->|No: Standard User| Bind[set_restricted_fields: employee.salary & employee.bank_account_number]
     Check -->|Yes: Admin| Exec[Execute business logic query]
     
     Bind --> Exec
-    Exec -->|Returns standard DB object| Response[ZCoreJSONResponse rendering]
-    Response -->|Reads active ContextVar| Project[ResponseProjector.project]
-    Project -->|Recursively pop restricted fields| Output[JSON Response payload without sensitive data]
+    Exec -->|Returns Zchema model| Serialize[Zchema.secure_serializer]
+    Serialize -->|Prune restricted fields| Output[JSON Response payload without sensitive data]
 ```
 
 ---
 
-### 📦 Step 1: Implement a Scoped Restriction Dependency
+### 📦 Step 1: Define Your Schema with `Zchema`
 
-Create a FastAPI dependency that evaluates the authenticated user's permissions and binds restricted fields to the context. 
+All schemas must inherit from `Zchema` and declare a `__db_name__` that binds them to their database domain:
 
-We suggest mapping restricted field dot-paths using the model's namespace (e.g., `resource.<field>`):
+```python
+from zcore import Zchema
+from pydantic import Field, ConfigDict
+import uuid
+
+class EmployeeResponse(Zchema):
+    __db_name__ = "employee"
+    id: uuid.UUID
+    name: str
+    salary: float            # Will be pruned for non-admin users
+    bank_account_number: str # Will be pruned for non-admin users
+
+    model_config = ConfigDict(from_attributes=True)
+```
+
+---
+
+### 🛡️ Step 2: Implement a Scoped Restriction Dependency
+
+Create a FastAPI dependency that evaluates the authenticated user's permissions and binds restricted fields to the context using the `{db_name}.{field}` syntax:
 
 ```python
 from fastapi import Depends
-from zcore.context import restricted_fields_context
+from zcore.context import set_restricted_fields
 from zcore.security.dependencies import get_current_user_stub
 from zcore.security.protocols import UserProtocol
 
@@ -42,27 +60,26 @@ async def apply_security_field_restrictions(
     user: UserProtocol = Depends(get_current_user_stub)
 ) -> None:
     """Evaluate user roles and bind restricted fields to the active context."""
-    restricted_paths = []
+    restricted_paths = set()
 
     # If the user is not a superuser, restrict sensitive fields
     if not getattr(user, "is_superuser", False):
-        # We specify paths using the resource namespace
-        restricted_paths.extend([
-            "resource.salary",
-            "resource.bank_routing_number",
-            "resource.bank_account_number"
+        # Use the domain-specific namespace: {db_name}.{field}
+        restricted_paths.update([
+            "employee.salary",
+            "employee.bank_routing_number",
+            "employee.bank_account_number"
         ])
 
     # Bind the restricted paths to the request-scoped context
-    # This context manager is automatically cleaned up when the request ends.
-    restricted_fields_context(restricted_paths).__enter__()
+    set_restricted_fields(restricted_paths)
 ```
 
 ---
 
-### 🗄️ Step 2: Set Up Your Database Model & Router
+### 🗄️ Step 3: Set Up Your Database Model & Router
 
-Define your database model and route configurations as usual. ZCore's router automatically integrates with the custom response class:
+Define your database model and route configurations as usual. ZCore's router automatically integrates with the `Zchema` security pipeline:
 
 ```python
 # models.py
@@ -87,8 +104,8 @@ For the web layer, assign the permissions on the corresponding lifecycle actions
 from zcore.web.base_router import BaseRouter, RouteKey
 from zcore.db.pagination import PageNumberPagination
 
-from .schemas import ProductCreate, ProductUpdate, ProductResponse
-from .services import ProductService
+from .schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse
+from .services import EmployeeService
 from .models import Employee
 from .security import apply_security_field_restrictions
 
@@ -109,9 +126,9 @@ class EmployeeRouter(BaseRouter[EmployeeCreate, EmployeeUpdate]):
 
 ---
 
-### 🧪 Step 3: Verification
+### 🧪 Step 4: Verification
 
-When a non-admin user requests employee data (e.g. `GET /employees/{id}`), ZCore intercepts the response during rendering. 
+When a non-admin user requests employee data (e.g. `GET /employees/{id}`), ZCore intercepts the response during serialization via the `Zchema.secure_serializer` hook.
 
 Even if your service layer loads the full `Employee` database object with its salary and bank details, the outgoing JSON payload is dynamically pruned:
 
@@ -131,5 +148,14 @@ Even if your service layer loads the full `Employee` database object with its sa
 
 ## 💡 Engineering Insights
 
-!!! tip "💡 Caching Safety"
+!!! tip "💡 Why `{db_name}.{field}` Instead of `resource.{field}`?"
+    The old `resource.` prefix caused namespace collisions across different domains. The new `{db_name}.{field}` syntax (e.g., `employee.salary`, `user.email`) ensures strict domain boundary isolation, preventing fields in the `billing` module from accidentally affecting fields in the `crm` module.
+
+!!! info "🛡️ Three Tiers of Protection"
+    `Zchema` doesn't just prune responses. It also:
+    1. **Prunes JSON Schemas** when clients request `?schema=true`
+    2. **Strips restricted fields from incoming payloads** (prevents Mass Assignment)
+    3. **Prunes outgoing responses** during native Pydantic serialization
+
+!!! note "🧠 Caching Safety"
     ZCore's `ZCoreAPIRoute` automatically appends `Authorization` or `Cookie` parameters to the response's `Vary` header whenever restricted fields are active. This instructs upstream reverse-proxies that the response varies based on user credentials, preventing data leaks across shared caches.

@@ -22,7 +22,7 @@ flowchart TD
 Before a query is even compiled, the engine cross-references all requested fields and paths against the active security context. If a user is not authorized to see a field (e.g., `internal_cost` or `hashed_password`), the engine blocks the query immediately.
 
 ```python
-# Internal logic: matches paths like 'resource.owner.id'
+# Internal logic: matches paths against domain-bound restricted fields (e.g., 'user.email', 'product.price')
 if normalized_path == normalized_restricted or normalized_path.startswith(normalized_restricted + "."):
     return True # Block access
 ```
