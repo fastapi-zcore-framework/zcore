@@ -12,6 +12,7 @@ if TYPE_CHECKING:
     from zcore.web.base_router import BaseRouter
     from zcore.web.response import ResponseWrapper
     from zcore.web.api_router import ZCoreAPIRoute
+    from zcore.web.projection import Zchema
 
 __all__ = [
     'Inject',
@@ -28,7 +29,8 @@ __all__ = [
     'BaseService',
     'BaseRouter',
     'ResponseWrapper',
-    'ZCoreAPIRoute'
+    'ZCoreAPIRoute',
+    'Zchema'
 ]
     
 
@@ -75,5 +77,8 @@ def __getattr__(name: str) -> Any:
     if name == "ZCoreAPIRoute":
         from zcore.web.api_router import ZCoreAPIRoute
         return ZCoreAPIRoute
+    if name == "Zchema":
+        from zcore.web.projection import Zchema
+        return Zchema
     
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
