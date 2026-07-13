@@ -39,6 +39,10 @@ token_lifespan = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 Bootstrapping boilerplate that brings together logging, dbs, routers, plugins, and the core lifecycle kernel.
 
 ```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from fastapi import FastAPI
 from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
