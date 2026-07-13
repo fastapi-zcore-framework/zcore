@@ -8,7 +8,7 @@ ZCore extends FastAPI's routing capabilities through a modest but powerful subcl
 
 A practical challenge in modern web development is keeping the frontend in sync with backend validation rules. ZCore allows clients to query an endpoint's structure by appending `?schema=true` to any supported URL.
 
-However, exposing raw schemas can be a security risk if they reveal "Restricted Fields." ZCore solves this by dynamically "pruning" the JSON Schema in real-time before it ever leaves the server.
+However, exposing raw schemas can be a security risk if they reveal restricted fields. ZCore solves this by leveraging the `Zchema` base class, which automatically prunes the JSON Schema during generation — before it ever leaves the server.
 
 ### 📐 The Pruning Pipeline
 
@@ -16,17 +16,21 @@ However, exposing raw schemas can be a security risk if they reveal "Restricted 
 graph TD
     Request[Client Request: GET /products/?schema=true] -->|Verify Permissions| IsExposed{Exposed?}
     IsExposed -->|No| Reject[🚨 400 Bad Request]
-    IsExposed -->|Yes| Clone[Deep Copy Raw Pydantic Schema]
-    Clone -->|Lookup Context| Context[get_restricted_fields]
-    Context -->|Recursive Traversal| Prune[prune_json_schema]
+    IsExposed -->|Yes| Generate[Generate JSON Schema via Zchema.__get_pydantic_json_schema__]
+    Generate -->|Resolve __db_name__ context| Prune[Prune properties matching restricted fields]
     Prune -->|Remove properties & requirements| Output[Return Pruned Schema JSON]
 ```
 
-### 🧠 Recursive Pruning Logic
-The `prune_json_schema` utility doesn't just look at the top level; it recursively walks through the entire JSON Schema tree. It is engineered to handle complex structures, including:
-*   **Nested Objects:** Removing fields deep within the hierarchy.
-*   **Requirements:** Automatically removing a field from the `required` list if it is pruned from `properties`.
-*   **References (`$ref`):** Safely following JSON pointers to prune shared definitions across your models.
+### 🧠 How It Works
+
+When `?schema=true` is requested, `ZCoreAPIRoute` calls `model_json_schema()` on the target schema. Because the schema inherits from `Zchema`, the `__get_pydantic_json_schema__` hook is triggered automatically. This hook:
+
+1. Resolves the active context's restricted fields via `get_restricted_fields()`
+2. Filters the paths to only those matching the schema's `__db_name__`
+3. Recursively prunes matching properties from the JSON Schema tree
+4. Removes pruned fields from the `required` list
+
+This means no deep-copy or manual `prune_json_schema` calls are needed — the pruning is handled natively by Pydantic V2's schema generation pipeline.
 
 ---
 
@@ -58,18 +62,18 @@ To make schema exposure work automatically, ZCore uses internal "discovery" help
 
 | Helper | Responsibility |
 | :--- | :--- |
-| **`find_input_schema`** | Locates the `BaseModel` used in the request body (for POST/PUT). |
+| **`find_input_schema`** | Locates the `Zchema`/`BaseModel` used in the request body (for POST/PUT). |
 | **`find_output_schema`** | Traverses generic containers to find the core "Response" model. |
 
 ---
 
 ## 💡 Engineering Insights
 
-!!! tip "💡 Beyond Metadata"
-    The `ZCoreAPIRoute` isn't just about schemas. It also forces the route to use `ZCoreJSONResponse`. This custom response class is what actually executes the field pruning on your **real data** before it is serialized into JSON.
+!!! tip "💡 Pruning Is Native Now"
+    Previously, ZCore used a `prune_json_schema` utility that deep-copied and manually traversed dictionary trees. With `Zchema`, the pruning is handled by Pydantic V2's native `__get_pydantic_json_schema__` hook — no deep-copying, no manual recursion, and full compatibility with the Pydantic ecosystem.
 
 !!! warning "🛡️ Performance Note"
-    Schema pruning involves deep-copying and recursive traversal of dictionary trees. While highly optimized, ZCore only performs this work when a client explicitly requests `?schema=true`. Standard API calls bypass the schema pruning logic to maintain high performance.
+    Schema pruning via `Zchema` is highly optimized and only performed when a client explicitly requests `?schema=true`. Standard API calls bypass the schema pruning logic to maintain high throughput.
 
 !!! note "🧠 Automatic Integration"
     When you use `BaseRouter`, all these features are enabled by default. You don't need to manually configure `APIRoute` classes; the framework orchestrates the wiring for you.

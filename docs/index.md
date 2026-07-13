@@ -19,7 +19,7 @@ ZCore was designed to bridge the gap between "writing an endpoint" and "building
 | Feature | Standard FastAPI Challenge | The ZCore Approach |
 | :--- | :--- | :--- |
 | **Dependency Injection** | Manual dependency registration and deeply nested `Depends` functions. | Automated **Scoped IoC** with constructor injection. |
-| **Data Security** | Manual filtering of Pydantic models for different users. | Context-aware **Response Pruning** via `ResponseProjector`. |
+| **Data Security** | Manual filtering of Pydantic models for different users. | **3-Tier Schema Security** via `Zchema` (generation, input, response). |
 | **Transactions** | Scatterred `.commit()` calls leading to partial failures. | Centralized **Unit of Work** (UOW) for atomic operations. |
 | **Project Structure** | Inconsistent layouts across different teams. | Modular **Plugin System** and standardized CLI scaffolding. |
 | **Search & Filter** | Writing repetitive boilerplate for every query. | A secure, dynamic **Search Engine** with depth-limit protection. |
@@ -37,7 +37,7 @@ sequenceDiagram
     participant R as ZCoreAPIRoute
     participant S as Service & UOW
     participant D as Database
-    participant P as ResponseProjector
+    participant P as Zchema Security Layer
 
     C->>M: HTTP Request
     Note over M: Generate Correlation ID<br/>Initialize Scoped DI
@@ -48,13 +48,13 @@ sequenceDiagram
     Note over S: Atomic Commit via Unit of Work
     D-->>S: Record Persisted
     S-->>R: Return Domain Model
-    R->>P: Data Sanitization
-    Note over P: Prune Restricted Fields<br/>(e.g., owner_id, internal_notes)
-    P-->>R: Clean Data
+    R->>P: Native Zchema Serialization
+    Note over P: Prune Restricted Fields<br/>(e.g., user.email, employee.salary)
+    P-->>R: Pruned Data (via model_serializer hook)
     R-->>C: JSON Response (Pruned)
 ```
 
-💡 **Note:** `ZCoreAPIRoute` acts as a smart gateway, automatically intercepting requests and responses to handle schema inspection and dynamic field pruning without cluttering your route handlers.
+💡 **Note:** `ZCoreAPIRoute` acts as a smart gateway, automatically intercepting requests and responses to handle schema inspection and dynamic field pruning — all delegated to the `Zchema` base class's native Pydantic V2 hooks.
 
 ---
 

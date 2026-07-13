@@ -119,10 +119,12 @@ class {ModelName}(Base):
     # name: Mapped[str] = mapped_column(String(255), index=True)
 """
 
-SCHEMA_TEMPLATE = """from pydantic import BaseModel, ConfigDict
+SCHEMA_TEMPLATE = """from zcore import Zchema
+from pydantic import ConfigDict
 import uuid
 
-class {ModelName}Base(BaseModel):
+class {ModelName}Base(Zchema):
+    __db_name__ = "{table_name}"
     # TODO: Add your shared model attributes
     pass
 

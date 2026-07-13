@@ -102,12 +102,14 @@ class Product(Base):
 ---
 
 ### 6. Pydantic Schemas (`schemas`)
-Pydantic V2 payload definitions that enforce data type casting and load attributes directly from database mappers.
+Pydantic V2 payload definitions that enforce data type casting and load attributes directly from database mappers. All schemas should inherit from `Zchema` and declare a `__db_name__` for domain-bound security.
 
 ```python
-from pydantic import BaseModel, Field, ConfigDict
+from zcore import Zchema
+from pydantic import Field, ConfigDict
 
-class ProductResponse(BaseModel):
+class ProductResponse(Zchema):
+    __db_name__ = "product"
     id: str
     name: str
     
@@ -361,13 +363,13 @@ Builds complex database queries dynamically, validating paths and converting typ
 ## Block 5: 🛡️ Security, Context & Response Projection
 
 ### 20. Context Management (`context`)
-Stores user and field restriction parameters securely across async execution blocks.
+Stores user and field restriction parameters securely across async execution blocks. Restricted fields use the `{db_name}.{field}` syntax for domain-bound security.
 
 ```python
 from zcore.context import request_context, get_current_user_id
 
 # Isolate user context and field restrictions for a specific block
-with request_context(user_id=active_user_id, fields=["resource.hashed_password"]):
+with request_context(user_id=active_user_id, fields=["user.hashed_password"]):
     # Retrieve the active user ID within any nested function block
     current_user = get_current_user_id()
 ```
@@ -394,35 +396,35 @@ token = create_token(data={"sub": "user_id_102", "role": "admin"})
 ---
 
 ### 22. Custom Route Mechanics (`api-router`)
-Enables custom routing rules, including dynamic output filtering and path-specific schema exposures.
+Enables custom routing rules, including dynamic schema exposure and native Zchema-based security.
 
 ```python
 # Enables /route/?schema=true queries on the endpoint
 expose_schemas = True
-
-# Overrides standard responses with context-aware pruned serializers
-response_class = ZCoreJSONResponse
 ```
 
 👉 [Custom Route Mechanics Reference Documentation](features/security/api-router.md)
 
 ---
 
-### 23. Output Projection (`projection & response`)
-Recursively prunes restricted fields from API responses and structures output in the standardized JSON envelope.
+### 23. Output Projection & Security (`Zchema & response`)
+ZCore's `Zchema` base class automatically prunes restricted fields across schema generation, input validation, and response serialization — all without web-layer middleware.
 
 ```python
-from zcore.web.projection import ResponseProjector
+from zcore import Zchema
 from zcore.web.response import ResponseWrapper
 
-# Prune restricted fields from a nested data dictionary on the fly
-clean_payload = ResponseProjector.project(data, restricted_fields=["resource.salary"])
+class EmployeeResponse(Zchema):
+    __db_name__ = "employee"
+    id: str
+    name: str
+    salary: float  # Automatically pruned for non-admin users
 
 # Package responses in the standardized JSON envelope
-response = ResponseWrapper.success_response(data=clean_payload, message="Success")
+response = ResponseWrapper.success_response(data=employee_data, message="Success")
 ```
 
-👉 [Output Projection Reference Documentation](features/security/projection.md)
+👉 [Zchema Security Reference Documentation](features/security/zchema.md)
 
 ---
 

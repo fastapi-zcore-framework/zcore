@@ -1,90 +1,145 @@
-"""JSON Response Projection Utility.
+"""Unified Schema and Response Pruning Hub.
 
-This module provides a pruning engine (`ResponseProjector`) designed to remove 
-unauthorized fields dynamically from serialized JSON payloads before they are returned 
-to the client, ensuring data confidentiality.
+This module provides the core `Zchema` base class, which integrates Pydantic V2 
+dynamic JSON schema generation, input validation, and response serialization 
+filtering based on domain-isolated context restriction definitions.
 """
 
-from typing import Any, Union
-from zcore.utils.helpers import json_dumps, json_loads
+from typing import Any, Optional, ClassVar, Set
+from pydantic import BaseModel, model_validator, model_serializer
+
+from zcore.context.context import get_restricted_fields
 
 
-class ResponseProjector:
-    """Pruning utility removing restricted attributes recursively from dictionary/list trees.
+class Zchema(BaseModel):
+    """Unified, domain-aware security schema base class.
 
-    Walks JSON-serializable models and deletes fields matching configured dot-path 
-    restriction definitions.
+    Subclasses specify their unique database domain mapping via the `__db_name__` 
+    class attribute. This enables contextual, recursive pruning across schema generation, 
+    input validation, and response serialization.
     """
 
-    @staticmethod
-    def project(data: Any, restricted_fields: Union[set[str], frozenset[str]]) -> Any:
-        """Prune unauthorized attributes from the provided data payload.
+    __db_name__: ClassVar[Optional[str]] = None
 
-        Serializes and deserializes the data payload to parse standard Pydantic or 
-        SQLAlchemy model attributes, resolves data envelopes, and removes key nodes 
-        matching restricted dot-paths.
+    @classmethod
+    def _get_relative_restricted_paths(cls) -> Set[str]:
+        """Extract and normalize restricted field paths mapped to this schema's domain."""
+        db_name = getattr(cls, "__db_name__", None)
+        if not db_name:
+            return set()
 
-        Args:
-            data: The raw data payload (typically a dictionary or sequence of objects).
-            restricted_fields: Set of blocked dot-path strings (e.g., "owner.email").
+        prefix = f"{db_name}."
+        restricted = get_restricted_fields()
+        relative_paths = set()
+        
+        for path in restricted:
+            # Remove common resource prefix for robust backwards compatibility
+            normalized = path.replace("resource.", "")
+            if normalized.startswith(prefix):
+                relative_paths.add(normalized[len(prefix):])
+            elif normalized == db_name:
+                # If the entire domain is restricted, restrict all attributes
+                relative_paths.add("*")
+        return relative_paths
 
-        Returns:
-            The sanitized JSON-compatible data payload.
-        """
-        if not data or not restricted_fields:
+    @classmethod
+    def _prune_data(cls, data: Any, relative_paths: Set[str]) -> Any:
+        """Recursively strip restricted attributes from dict representations."""
+        if not relative_paths or not isinstance(data, dict):
             return data
-            
-        json_data = json_loads(json_dumps(data))
-        
-        if isinstance(json_data, dict) and "data" in json_data:
-            data_field = json_data["data"]
-            if isinstance(data_field, list):
-                for item in data_field:
-                    for path in restricted_fields:
-                        parts = path.split(".")
-                        if parts[0] == "resource" and len(parts) > 1:
-                            parts = parts[1:]
-                        ResponseProjector._prune_nested(item, parts)
-            elif isinstance(data_field, dict):
-                for path in restricted_fields:
-                    parts = path.split(".")
-                    if parts[0] == "resource" and len(parts) > 1:
-                        parts = parts[1:]
-                    ResponseProjector._prune_nested(data_field, parts)
-        else:
-            for path in restricted_fields:
-                parts = path.split(".")
-                if parts[0] == "resource" and len(parts) > 1:
-                    parts = parts[1:]
-                ResponseProjector._prune_nested(json_data, parts)
-                
-        return json_data
 
-    @staticmethod
-    def _prune_nested(node: Any, path_parts: list[str]) -> None:
-        """Recursively traverse a JSON node and delete target key-value nodes.
+        if "*" in relative_paths:
+            data.clear()
+            return data
 
-        Args:
-            node: The current tree node (typically a list or dictionary) to process.
-            path_parts: Remaining segments of the restricted dot-path.
-        """
-        if not path_parts or node is None:
-            return
-            
-        field = path_parts[0]
-        
-        if len(path_parts) == 1:
-            if isinstance(node, dict):
-                node.pop(field, None)
-            elif isinstance(node, list):
-                for item in node:
-                    ResponseProjector._prune_nested(item, path_parts)
-            return
+        # Group remaining nested relative paths by top-level keys
+        nested_restrictions: dict[str, Set[str]] = {}
+        for path in relative_paths:
+            parts = path.split(".", 1)
+            if len(parts) == 1:
+                data.pop(parts[0], None)
+            else:
+                key, remaining = parts
+                if key not in nested_restrictions:
+                    nested_restrictions[key] = set()
+                nested_restrictions[key].add(remaining)
 
-        if isinstance(node, dict):
-            next_node = node.get(field)
-            if next_node is not None:
-                ResponseProjector._prune_nested(next_node, path_parts[1:])
-        elif isinstance(node, list):
-            for item in node:
-                ResponseProjector._prune_nested(item, path_parts)
+        # Process nested levels recursively
+        for key, remaining_paths in nested_restrictions.items():
+            if key in data:
+                if isinstance(data[key], dict):
+                    data[key] = cls._prune_data(data[key], remaining_paths)
+                elif isinstance(data[key], list):
+                    data[key] = [
+                        cls._prune_data(item, remaining_paths) if isinstance(item, dict) else item
+                        for item in data[key]
+                    ]
+            return data
+
+    @classmethod
+    def __get_pydantic_json_schema__(
+        cls, core_schema: Any, handler: Any
+    ) -> dict[str, Any]:
+        """Level 1: Customize dynamic JSON schema generation under context boundaries."""
+        json_schema = handler(core_schema)
+        relative_paths = cls._get_relative_restricted_paths()
+        if not relative_paths:
+            return json_schema
+
+        def prune_schema(schema: dict[str, Any], paths: Set[str]) -> None:
+            if not isinstance(schema, dict):
+                return
+
+            if "*" in paths:
+                schema.clear()
+                return
+
+            properties = schema.get("properties")
+            required = schema.get("required")
+
+            if isinstance(properties, dict):
+                nested_restrictions: dict[str, Set[str]] = {}
+                for path in paths:
+                    parts = path.split(".", 1)
+                    if len(parts) == 1:
+                        properties.pop(parts[0], None)
+                        if isinstance(required, list) and parts[0] in required:
+                            required.remove(parts[0])
+                    else:
+                        key, remaining = parts
+                        if key not in nested_restrictions:
+                            nested_restrictions[key] = set()
+                        nested_restrictions[key].add(remaining)
+
+                for key, remaining_paths in nested_restrictions.items():
+                    if key in properties:
+                        prune_schema(properties[key], remaining_paths)
+
+        prune_schema(json_schema, relative_paths)
+        return json_schema
+
+    @model_validator(mode="before")
+    @classmethod
+    def filter_restricted_inputs(cls, data: Any) -> Any:
+        """Level 2: Silently strip restricted fields from input payloads to prevent Mass Assignment."""
+        relative_paths = cls._get_relative_restricted_paths()
+        if not relative_paths or data is None:
+            return data
+
+        if isinstance(data, dict):
+            data_copy = dict(data)
+            return cls._prune_data(data_copy, relative_paths)
+        return data
+
+    @model_serializer(mode="wrap")
+    def secure_serializer(self, handler: Any) -> Any:
+        """Level 3: Securely intercept serialization to prune restricted attributes from response."""
+        serialized = handler(self)
+        relative_paths = self._get_relative_restricted_paths()
+        if not relative_paths or serialized is None:
+            return serialized
+
+        if isinstance(serialized, dict):
+            serialized_copy = dict(serialized)
+            return self._prune_data(serialized_copy, relative_paths)
+        return serialized

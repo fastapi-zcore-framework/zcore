@@ -5,12 +5,12 @@ success and failure API responses consistently across the ZCore framework.
 """
 
 from typing import Generic, TypeVar, Optional, Any
-from pydantic import BaseModel
+from zcore.web.projection import Zchema
 
 T = TypeVar("T")
 
 
-class ResponseWrapper(BaseModel, Generic[T]):
+class ResponseWrapper(Zchema, Generic[T]):
     """Standardized generic JSON API envelope container.
 
     Enforces a consistent payload structure for all application endpoints.
