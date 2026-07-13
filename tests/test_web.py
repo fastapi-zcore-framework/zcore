@@ -1,18 +1,19 @@
 import uuid
-from typing import Any, Type
+from typing import Any
 from unittest.mock import MagicMock
-from fastapi import FastAPI, APIRouter
+from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 import pytest
 from pydantic import BaseModel
 
 from zcore.kernel.di import container
-from zcore.web.api_router import ZCoreJSONResponse
 from zcore.web.base_router import BaseRouter, RouteKey
 from zcore.web.middleware import RequestLogMiddleware
-from zcore.web.projection import ResponseProjector
+from zcore.web.projection import Zchema
 
 class DummyModel:
+    __tablename__ = "dummy"
+
     @classmethod
     def actions(cls) -> Any:
         mock_actions = MagicMock()
@@ -29,10 +30,11 @@ class DummyCreate(BaseModel):
 class DummyUpdate(BaseModel):
     name: str
 
-class DummyOut(BaseModel):
+class DummyOut(Zchema):
+    __db_name__ = "dummy"
     id: str
     name: str
-    password: str
+    password: str = ""
 
 @pytest.mark.parametrize(
     "router_attrs, expected_error_msg",
@@ -55,7 +57,6 @@ class DummyOut(BaseModel):
                 "create_schema": DummyCreate,
                 "update_schema": DummyUpdate,
                 "model": None,
-                "DEFAULT_PERMISSIONS": "AUTO",
             },
             "Model class must be defined"
         ),
@@ -91,7 +92,7 @@ class TargetService:
     "restricted_fields, payload_in, expected_payload_out, expected_vary",
     [
         (
-            {"password", "resource.password"},
+            {"dummy.password", "resource.dummy.password"},
             {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA", "password": "hash"},
             {"id": "12345678-1234-5678-1234-567812345678", "name": "UserA"},
             ["Authorization", "Cookie"]
@@ -111,7 +112,9 @@ async def test_router_schema_projection_pruning(
     expected_payload_out: dict[str, Any],
     expected_vary: list[str]
 ) -> None:
+    monkeypatch.setattr("zcore.web.projection.get_restricted_fields", lambda: restricted_fields)
     monkeypatch.setattr("zcore.web.api_router.get_restricted_fields", lambda: restricted_fields)
+    monkeypatch.setattr("zcore.context.context.get_restricted_fields", lambda: restricted_fields)
     
     app = FastAPI()
     mock_service = TargetService(payload_in)
@@ -123,9 +126,11 @@ async def test_router_schema_projection_pruning(
         update_schema = DummyUpdate
         schema_out = DummyOut
         service = TargetService
-        DEFAULT_PERMISSIONS = []
         prefix = "/items"
         expose_schemas = True
+
+        def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+            return []
 
     router_inst = TargetRouter()
     app.include_router(router_inst.router)
