@@ -161,7 +161,9 @@ class {ModelName}Service(BaseService[{ModelName}, {ModelName}Create, {ModelName}
         super().__init__(model={ModelName}, repository=repository)
 """
 
-ROUTER_TEMPLATE = """from zcore import BaseRouter
+ROUTER_TEMPLATE = """from typing import Any
+from zcore import BaseRouter
+from zcore.web import RouteKey
 from .schemas import {ModelName}Create, {ModelName}Update, {ModelName}Response
 from .services import {ModelName}Service
 from .models import {ModelName}
@@ -176,6 +178,19 @@ class {ModelName}Router(BaseRouter[{ModelName}Create, {ModelName}Update]):
     prefix = "/{app_name}"
     tags = ["{ModelName}"]
     # expose_schemas = True  # Set True to auto-expose JSON Schema on endpoints
+
+    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+        \"\"\"Retrieve the dependencies list for the router endpoints.
+        
+        By overriding this method, you can dynamically inject custom authentication,
+        authorization, logging, or rate-limiting dependencies for specific route keys.
+        \"\"\"
+        # Example: Add custom dependencies to delete operation, fallback to standard permissions for others
+        if route_key == RouteKey.DELETE:
+            # return [MyCustomAdminPermission()]
+            pass
+            
+        return super().get_route_dependencies(route_key, action)
 
 # Export the FastAPI router
 router_instance = {ModelName}Router()

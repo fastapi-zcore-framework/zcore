@@ -9,7 +9,7 @@ if TYPE_CHECKING:
     from zcore.db.search import SearchRequest
     from zcore.db.uow import UnitOfWork
     from zcore.service.base import BaseService
-    from zcore.web.base_router import BaseRouter
+    from zcore.web.base_router import BaseRouter, RouteKey
     from zcore.web.response import ResponseWrapper
     from zcore.web.api_router import ZCoreAPIRoute
     from zcore.web.projection import Zchema
@@ -28,6 +28,7 @@ __all__ = [
     'UnitOfWork',
     'BaseService',
     'BaseRouter',
+    'RouteKey',
     'ResponseWrapper',
     'ZCoreAPIRoute',
     'Zchema'
