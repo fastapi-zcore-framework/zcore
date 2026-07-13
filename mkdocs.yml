@@ -74,6 +74,7 @@ nav:
   - How-To Guides:
       - JWT Authentication & Scopes: how-to/auth-setup.md
       - Multi-Repository Transactions: how-to/multi-repo-transactions.md
+      - Project-Wide Base Router & Dependencies: how-to/base-router-extensibility.md
       - Dynamic Role-Based Field Masking: how-to/field-masking.md
       - Custom S3 Cloud Storage: how-to/custom-storage-provider.md
       - WebSockets & Redis PubSub: how-to/websocket-pubsub.md
