@@ -28,6 +28,15 @@ class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
                 payload={"field": "name", "value": schema.name}
             )
 
+    async def on_create(self, schema: ProductCreate) -> Product:
+        """Custom database/persistence logic for single-record creation.
+
+        Override this instead of the public `create()` orchestrator.
+        The orchestrator guarantees that pre/post hooks and the safe commit
+        boundary are always executed around this method.
+        """
+        return await self.repository.create(schema)
+
     async def post_create(self, model: Product) -> None:
         """Lifecycle hook executed automatically after successful database insert."""
         # Ideal place for side-effects like sending emails or logs
@@ -38,18 +47,29 @@ class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
 
 ## 🚦 Orchestration Flow
 
-The service layer acts as the "manager," ensuring that data follows the correct path and validation rules before being persisted.
+The service layer acts as the "manager," ensuring that data follows the correct path and validation rules before being persisted. The public orchestrator methods (`create`, `update`, `delete`) follow the **Template Method** pattern: they coordinate the execution of `pre_*` hooks, the customizable `on_*` database action, `post_*` hooks, and the `_safe_commit` boundary — in that exact order.
 
 ```mermaid
 graph TD
     Router[Web Router] -->|Calls| Service[ProductService]
     subgraph Service Layer
-        Pre[pre_create Hook] --> Business[Business Logic]
-        Business --> Post[post_create Hook]
+        Pre[pre_create Hook] --> On[on_create Business Logic]
+        On --> Post[post_create Hook]
     end
     Service -->|Commands| Repo[ProductRepository]
     Repo --> DB[(SQL Database)]
 ```
+
+### 🔧 What to Override
+
+| Method | Purpose |
+| :--- | :--- |
+| `pre_create` / `pre_update` / `pre_delete` | Validation, authorization, or enrichment **before** the database operation. |
+| `on_create` / `on_update` / `on_delete` | **Custom database/persistence logic.** Override these instead of the public `create()` / `update()` / `delete()` orchestrators. |
+| `post_create` / `post_update` / `post_delete` | Side-effects (logging, events, cache invalidation) **after** a successful database operation. |
+
+!!! tip "🧠 Why `on_*` Instead of Overriding `create()`?"
+    Previously, developers overrode `create()` directly, which risked skipping hooks or the safe commit boundary. The new `on_*` methods are the **only** extension points you need. The orchestrator guarantees that `pre_*` hooks run first, your custom logic runs next, `post_*` hooks run after, and the transaction is committed safely — every time.
 
 ---
 
@@ -67,14 +87,17 @@ ZCore provides hooks that wrap around standard database operations. These are de
 | Hook | When it runs | Practical Example |
 | :--- | :--- | :--- |
 | ✨ `pre_create` | Before SQL Insert | Check for name duplicates or validate business rules. |
+| ✅ `on_create` | Core database insert | Override to customize the creation logic. |
 | ✅ `post_create` | After SQL Insert | Increment user stats or notify other systems. |
 | 🛠️ `pre_update` | Before SQL Update | Verify if the product is not "locked" for edits. |
+| 🔄 `on_update` | Core database update | Override to customize the update logic. |
 | 🔄 `post_update` | After SQL Update | Clear local cache records for this product. |
 | 🗑️ `pre_delete` | Before SQL Delete | Ensure the product is not linked to active orders. |
+| 🗑️ `on_delete` | Core database delete | Override to customize the deletion logic. |
 
 ---
 
 !!! tip "🧠 Engineering Note: Transaction Safety"
-    All write operations inside a service are handled atomically. If an exception is raised in `pre_create` or even during the SQL save, ZCore will automatically roll back the transaction, ensuring your database remains in a consistent state.
+    All write operations inside a service are handled atomically. If an exception is raised in `pre_create` or even during the `on_create` database action, ZCore will automatically roll back the transaction, ensuring your database remains in a consistent state.
 
 In the next step, we will expose this service to the outside world using the **Web Router**.

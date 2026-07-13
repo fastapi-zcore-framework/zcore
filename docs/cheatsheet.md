@@ -137,7 +137,7 @@ class ProductRepository(BaseRepository[Product, ProductCreate, ProductUpdate]):
 ---
 
 ### 8. Business Service (`service`)
-The business logic layer, featuring integrated dependency injection and pre/post mutation hooks.
+The business logic layer, featuring integrated dependency injection, `on_*` persistence methods, and pre/post lifecycle hooks.
 
 ```python
 from zcore.service.base import BaseService

@@ -256,6 +256,53 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
                 await self.repository.db.rollback()
                 raise
 
+    async def on_create(self, schema: CreateSchemaType) -> ModelType:
+        """Execute core single-record creation in database.
+
+        Subclasses may override this method to customize core creation behavior.
+        """
+        return await self.repository.create(schema)
+
+    async def on_create_multi(self, schemas: List[CreateSchemaType], refresh: bool = False) -> Sequence[ModelType]:
+        """Execute core batch-record creation in database.
+
+        Subclasses may override this method to customize core batch creation behavior.
+        """
+        return await self.repository.create_multi(schemas, refresh=refresh)
+
+    async def on_update(self, id: Any, schema: UpdateSchemaType, partial: bool = False) -> Optional[ModelType]:
+        """Execute core single-record update in database.
+
+        Subclasses may override this method to customize core update behavior.
+        """
+        return await self.repository.update(id, schema, partial)
+
+    async def on_update_multi(
+        self, 
+        data: Dict[Any, UpdateSchemaType], 
+        partial: bool = False, 
+        refresh: bool = False
+    ) -> Sequence[ModelType]:
+        """Execute core batch-record updates in database.
+
+        Subclasses may override this method to customize core batch update behavior.
+        """
+        return await self.repository.update_multi(data, partial, refresh=refresh)
+
+    async def on_delete(self, id: Any) -> Optional[ModelType]:
+        """Execute core single-record deletion in database.
+
+        Subclasses may override this method to customize core deletion behavior.
+        """
+        return await self.repository.delete(id)
+
+    async def on_delete_multi(self, ids: List[Any]) -> Sequence[ModelType]:
+        """Execute core batch-record deletions in database.
+
+        Subclasses may override this method to customize core batch deletion behavior.
+        """
+        return await self.repository.delete_multi(ids)
+
     async def create(self, schema: CreateSchemaType) -> ModelType:
         """Orchestrate the creation and persistence of a new domain entity.
 
@@ -266,7 +313,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             The created and processed database model instance.
         """
         await self.pre_create(schema)
-        result = await self.repository.create(schema)
+        result = await self.on_create(schema)
         await self.post_create(result)
         await self._safe_commit()
         return result
@@ -283,7 +330,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             A sequence of created and processed database model instances.
         """
         await self.pre_create_multi(schemas)
-        result = await self.repository.create_multi(schemas, refresh=refresh)
+        result = await self.on_create_multi(schemas, refresh=refresh)
         await self.post_create_multi(result)
         await self._safe_commit()
         return result
@@ -303,7 +350,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             EntityNotFound: If the target entity identifier is not found in the database.
         """
         await self.pre_update(id, schema, partial)
-        result = await self.repository.update(id, schema, partial)
+        result = await self.on_update(id, schema, partial)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         await self.post_update(result)
@@ -327,7 +374,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             A sequence containing the updated and processed database model instances.
         """
         await self.pre_update_multi(data, partial)
-        result = await self.repository.update_multi(data, partial, refresh=refresh)
+        result = await self.on_update_multi(data, partial, refresh=refresh)
         await self.post_update_multi(result)
         await self._safe_commit()
         return result
@@ -345,7 +392,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             EntityNotFound: If the target entity identifier is not found in the database.
         """
         await self.pre_delete(id)
-        result = await self.repository.delete(id)
+        result = await self.on_delete(id)
         if not result:
             raise EntityNotFound(message=f"{self.model.__name__} not found.")
         await self.post_delete(result)
@@ -362,7 +409,7 @@ class WriteServiceMixin(Generic[ModelType, CreateSchemaType, UpdateSchemaType], 
             A sequence containing the deleted and processed database model instances.
         """
         await self.pre_delete_multi(ids)
-        result = await self.repository.delete_multi(ids)
+        result = await self.on_delete_multi(ids)
         await self.post_delete_multi(result)
         await self._safe_commit()
         return result
@@ -383,6 +430,10 @@ class SearchServiceMixin(AbstractService[ModelType]):
         """Hook triggered after processing dynamic search queries."""
         pass
 
+    async def on_search(self, search_in: SearchRequest, pagination: Any = None):
+        """Execute core search queries in database."""
+        return await self.repository.search(search_in, pagination)
+
     async def search(self, search_in: SearchRequest, pagination: Any = None) -> Any:
         """Build and execute dynamic filters, pre-loading patterns, and sorting paths.
 
@@ -395,7 +446,7 @@ class SearchServiceMixin(AbstractService[ModelType]):
             or an unpaginated sequence of processed database model instances.
         """
         await self.pre_search(search_in)
-        result = await self.repository.search(search_in, pagination)
+        result = await self.on_search(search_in, pagination)
         if pagination is None:
             await self.post_search(result)
             return result
