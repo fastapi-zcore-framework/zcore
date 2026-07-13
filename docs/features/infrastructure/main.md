@@ -42,6 +42,10 @@ graph TD
 We suggest the following structured layout for your entry point to ensure all ZCore features are fully utilized:
 
 ```python
+import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
 from fastapi import FastAPI
 from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware

@@ -8,11 +8,13 @@ The service layer is the modest heart of your application's logic. It acts as a 
 
 ZCore's `BaseService` provides built-in "hooks" that run automatically around database modifications. These hooks allow you to validate, clean, or enrich your data without cluttering the core logic of saving to the database.
 
+The public orchestrator methods (`create`, `create_multi`, `update`, `update_multi`, `delete`, `delete_multi`) follow the **Template Method** pattern. They coordinate the execution of `pre_*` hooks, the customizable `on_*` database action, `post_*` hooks, and the `_safe_commit` boundary — in that exact order.
+
 ```mermaid
 flowchart TD
-    Input[Incoming Request Payload] --> Pre[1. pre_create / pre_update]
-    Pre -->|Business Validation| RepoCall[2. Repository Execution]
-    RepoCall -->|Pushes Changes| Post[3. post_create / post_update]
+    Input[Incoming Request Payload] --> Pre[1. pre_create / pre_update / pre_delete]
+    Pre -->|Business Validation| On[2. on_create / on_update / on_delete]
+    On -->|Custom Persistence Logic| Post[3. post_create / post_update / post_delete]
     Post -->|Prepares Events| Commit[4. _safe_commit]
 ```
 
@@ -21,10 +23,16 @@ flowchart TD
 | Hook | Phase | Primary Use Case |
 | :--- | :--- | :--- |
 | ✨ `pre_create` | Before SQL Insert | Data sanitization and domain-level validation. |
+| ✅ `on_create` | Core database insert | Override to customize the creation logic. |
 | ✅ `post_create` | After SQL Insert | Triggering side effects like logging or metrics. |
 | 🛠️ `pre_update` | Before SQL Update | Checking permissions or calculating derived fields. |
+| 🔄 `on_update` | Core database update | Override to customize the update logic. |
 | 🔄 `post_update` | After SQL Update | Invalidating caches or notifying other systems. |
 | 🗑️ `pre_delete` | Before SQL Delete | Verifying that the record can be safely removed. |
+| 🗑️ `on_delete` | Core database delete | Override to customize the deletion logic. |
+
+!!! tip "🧠 Why `on_*` Instead of Overriding `create()`?"
+    Previously, developers overrode `create()` directly, which risked skipping hooks or the safe commit boundary. The new `on_*` methods are the **only** extension points you need for custom database/persistence logic. The orchestrator guarantees that `pre_*` hooks run first, your custom logic runs next, `post_*` hooks run after, and the transaction is committed safely — every time.
 
 ---
 
@@ -72,6 +80,16 @@ class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
             raise ValidationError(
                 message="High-value products must be initialized with a minimum of 5 items."
             )
+    
+    async def on_create(self, schema: ProductCreate) -> Product:
+        """Custom database/persistence logic for single-record creation.
+
+        Override this instead of the public `create()` orchestrator.
+        The orchestrator guarantees that pre/post hooks and the safe commit
+        boundary are always executed around this method.
+        """
+        # Apply any custom transformations before persisting
+        return await self.repository.create(schema)
             
     async def post_create(self, model: Product) -> None:
         """Logic to run after the database has flushed the new record."""
@@ -87,4 +105,4 @@ class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
     Use `pre_create` for **Business Logic Validation** (e.g., "Is this user allowed to buy this?"). Use Pydantic schemas for **Structural Validation** (e.g., "Is this field an integer?"). This keeps your service layer focused on rules rather than data types.
 
 !!! info "🛡️ Automatic Rollbacks"
-    If an exception is raised inside a `pre_` hook or during the repository call, ZCore will prevent the commit and ensure the database session is rolled back. Your data remains safe and consistent.
+    If an exception is raised inside a `pre_` hook or during the `on_` database action, ZCore will prevent the commit and ensure the database session is rolled back. Your data remains safe and consistent.

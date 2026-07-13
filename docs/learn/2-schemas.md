@@ -8,10 +8,12 @@ Open `products/schemas.py` and define the following contracts:
 import uuid
 from decimal import Decimal
 from typing import Optional
-from pydantic import BaseModel, Field, ConfigDict
+from pydantic import Field, ConfigDict
+from zcore import Zchema
 
-class ProductBase(BaseModel):
+class ProductBase(Zchema):
     """Shared attributes validated across incoming and outgoing product requests."""
+    __db_name__ = "product"
     name: str = Field(..., min_length=2, max_length=120, description="Product retail name")
     price: Decimal = Field(..., ge=0.00, max_digits=10, decimal_places=2, description="Product price")
     stock: int = Field(default=0, ge=0, description="Available stock inventory")
@@ -20,8 +22,9 @@ class ProductCreate(ProductBase):
     """Schema for validating new product creation payloads."""
     pass
 
-class ProductUpdate(BaseModel):
+class ProductUpdate(Zchema):
     """Schema for validating product update payloads (supports partial patches)."""
+    __db_name__ = "product"
     name: Optional[str] = Field(None, min_length=2, max_length=120)
     price: Optional[Decimal] = Field(None, ge=0.00, max_digits=10, decimal_places=2)
     stock: Optional[int] = Field(None, ge=0)
@@ -44,6 +47,28 @@ To help understand when to use each schema, refer to this breakdown:
 | 📦 `ProductCreate` | **Inbound** | Validates that name, price, and stock exist and meet constraints. |
 | 🛠️ `ProductUpdate` | **Inbound** | Allows clients to update only specific fields (Optionality). |
 | 📤 `ProductResponse` | **Outbound** | Formats the data for the client and includes the generated `id`. |
+
+---
+
+## 🔐 The `Zchema` Base Class
+
+All schemas in ZCore should inherit from `Zchema` (not directly from Pydantic's `BaseModel`). `Zchema` is a drop-in replacement that adds three layers of automatic security:
+
+| Tier | Mechanism | What It Protects |
+| :--- | :--- | :--- |
+| **1. Dynamic Schema Generation** | `__get_pydantic_json_schema__` | Removes restricted fields when clients request `?schema=true`. |
+| **2. Input Validation** | `model_validator` | Silently strips restricted fields from incoming request payloads (prevents Mass Assignment). |
+| **3. Response Pruning** | `model_serializer` | Strips restricted fields from the final outgoing JSON response. |
+
+### 🏷️ The `__db_name__` Attribute
+
+Every `Zchema` subclass must define a `__db_name__` class attribute that binds the schema to its database domain (e.g., `"product"`, `"user"`, `"order"`). This enables the security layer to resolve restricted field paths like `product.price` or `user.email` without namespace collisions across different modules.
+
+```python
+class ProductBase(Zchema):
+    __db_name__ = "product"   # <-- domain binding
+    name: str
+```
 
 ---
 

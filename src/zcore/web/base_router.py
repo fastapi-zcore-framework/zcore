@@ -2,7 +2,7 @@
 
 This module provides the generic `BaseRouter` interface, which scaffolds 
 standard security-aware CRUD endpoints (POST, GET, GET_ALL, SEARCH, UPDATE, PATCH, DELETE) 
-and integrates them with services, schemas, permission requirements, and pagination handlers.
+and integrates them with services, schemas, dependency requirements, and pagination handlers.
 """
 
 import uuid
@@ -42,7 +42,7 @@ class RouteKey(StrEnum):
 class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     """Generic web router orchestrator.
 
-    Automatically maps operations to matching database model permissions and handles
+    Automatically maps operations to matching database model dependencies and handles
     dependency injections and schema checks.
 
     Attributes:
@@ -57,15 +57,6 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
         pagination_class: Pagination engine class to construct list queries.
         route_class: Custom routing processing class. Defaults to ZCoreAPIRoute.
         expose_schemas: Exposes target endpoint schemas dynamically.
-        DEFAULT_PERMISSIONS: Fallback permission check configurations.
-            If set to 'AUTO', generates permissions from standard model operations.
-        POST_PERMISSIONS: Permissions required for the POST endpoint.
-        GET_PERMISSIONS: Permissions required for the GET endpoint.
-        GET_ALL_PERMISSIONS: Permissions required for the GET_ALL endpoint.
-        SEARCH_PERMISSIONS: Permissions required for the SEARCH endpoint.
-        UPDATE_PERMISSIONS: Permissions required for the UPDATE endpoint.
-        PATCH_PERMISSIONS: Permissions required for the PATCH endpoint.
-        DELETE_PERMISSIONS: Permissions required for the DELETE endpoint.
     """
 
     model: Type[Any]
@@ -81,15 +72,6 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
     route_class: Type[APIRoute] = ZCoreAPIRoute
 
     expose_schemas: Union[set[RouteKey], bool] = False
-
-    DEFAULT_PERMISSIONS: Optional[Union[list[Any], str]] = "AUTO"
-    POST_PERMISSIONS: Optional[list[Any]] = None
-    GET_PERMISSIONS: Optional[list[Any]] = None
-    GET_ALL_PERMISSIONS: Optional[list[Any]] = None
-    SEARCH_PERMISSIONS: Optional[list[Any]] = None
-    UPDATE_PERMISSIONS: Optional[list[Any]] = None
-    PATCH_PERMISSIONS: Optional[list[Any]] = None
-    DELETE_PERMISSIONS: Optional[list[Any]] = None
 
     def __init__(self) -> None:
         """Initialize the BaseRouter.
@@ -164,33 +146,17 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
                 
         return normalized
 
-    def _get_route_dependencies(self, route_key: RouteKey) -> list[Depends]:
-        """Resolve authorization security checks required for the target endpoint.
+    def get_route_action(self, route_key: RouteKey) -> str:
+        """Retrieve the database/permission action name for a given route key.
 
         Args:
-            route_key: The target CRUD operational key.
+            route_key: The target operational key.
 
         Returns:
-            The resolved security dependencies list.
-
-        Raises:
-            ValueError: If permissions are set to AUTO but no model class is defined.
+            The calculated permission action identifier string.
         """
-        route_perms = getattr(self, f"{route_key.value}_PERMISSIONS", None)
-        
-        if route_perms == []:
-            return []
-        
-        if route_perms is not None:
-            return self._normalize_dependencies(route_perms)
-        
-        if self.DEFAULT_PERMISSIONS != "AUTO":
-            if not self.DEFAULT_PERMISSIONS:
-                return []
-            return self._normalize_dependencies(self.DEFAULT_PERMISSIONS)
-
-        if self.DEFAULT_PERMISSIONS == "AUTO" and not self.model:
-            raise ValueError(f"Model class must be defined in {self.__class__.__name__} to use AUTO permissions.")
+        if not self.model:
+            raise ValueError(f"Model class must be defined in {self.__class__.__name__} to resolve route actions.")
         
         action_map = {
             RouteKey.POST: self.model.actions().CREATE,
@@ -201,9 +167,41 @@ class BaseRouter(Generic[CreateSchemaType, UpdateSchemaType]):
             RouteKey.PATCH: self.model.actions().UPDATE,
             RouteKey.DELETE: self.model.actions().DELETE,
         }
-        scope = action_map.get(route_key)
-        
-        return self._normalize_dependencies(HasScopes(scope))
+        return action_map[route_key]
+
+    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+        """Generate default route dependencies (authentication, authorization, logging, etc.).
+
+        Subclasses can override this method to inject dynamic, runtime dependencies
+        with full OOP flexibility.
+
+        Args:
+            route_key: The target operational route key.
+            action: The computed database/permission action identifier.
+
+        Returns:
+            A list of dependencies (callable, classes or FastAPI Depends objects).
+        """
+        if not action:
+            return []
+        return [HasScopes(action)]
+
+    def _get_route_dependencies(self, route_key: RouteKey) -> list[DependsClass]:
+        """Internal helper to resolve and normalize route dependencies.
+
+        Args:
+            route_key: The target operational route key.
+
+        Returns:
+            A normalized list of FastAPI dependency parameters.
+        """
+        try:
+            action = self.get_route_action(route_key)
+        except (ValueError, AttributeError):
+            action = ""
+            
+        dependencies = self.get_route_dependencies(route_key, action)
+        return self._normalize_dependencies(dependencies)
 
     def _register_routes(self) -> None:
         """Dynamically generate and bind endpoints to the APIRouter."""

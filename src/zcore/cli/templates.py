@@ -1,4 +1,8 @@
-MAIN_PY_TEMPLATE = """from fastapi import FastAPI
+MAIN_PY_TEMPLATE = """import sys
+from pathlib import Path
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+from fastapi import FastAPI
 from zcore import Kernel, settings
 from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
 from zcore.exceptions import app_exception_handler, AppException
@@ -45,7 +49,8 @@ async def root():
     }
 """
 
-ENV_TEMPLATE = """ENVIRONMENT=development
+ENV_TEMPLATE = """PYTHONPATH=.
+ENVIRONMENT=development
 PROJECT_NAME="{project_name}"
 DATABASE_URL=sqlite+aiosqlite:///zcore_dev.db
 SECRET_KEY="{secret_key}"
@@ -119,10 +124,12 @@ class {ModelName}(Base):
     # name: Mapped[str] = mapped_column(String(255), index=True)
 """
 
-SCHEMA_TEMPLATE = """from pydantic import BaseModel, ConfigDict
+SCHEMA_TEMPLATE = """from zcore import Zchema
+from pydantic import ConfigDict
 import uuid
 
-class {ModelName}Base(BaseModel):
+class {ModelName}Base(Zchema):
+    __db_name__ = "{table_name}"
     # TODO: Add your shared model attributes
     pass
 
@@ -159,7 +166,9 @@ class {ModelName}Service(BaseService[{ModelName}, {ModelName}Create, {ModelName}
         super().__init__(model={ModelName}, repository=repository)
 """
 
-ROUTER_TEMPLATE = """from zcore import BaseRouter
+ROUTER_TEMPLATE = """from typing import Any
+from zcore import BaseRouter
+from zcore.web import RouteKey
 from .schemas import {ModelName}Create, {ModelName}Update, {ModelName}Response
 from .services import {ModelName}Service
 from .models import {ModelName}
@@ -174,6 +183,19 @@ class {ModelName}Router(BaseRouter[{ModelName}Create, {ModelName}Update]):
     prefix = "/{app_name}"
     tags = ["{ModelName}"]
     # expose_schemas = True  # Set True to auto-expose JSON Schema on endpoints
+
+    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
+        \"\"\"Retrieve the dependencies list for the router endpoints.
+        
+        By overriding this method, you can dynamically inject custom authentication,
+        authorization, logging, or rate-limiting dependencies for specific route keys.
+        \"\"\"
+        # Example: Add custom dependencies to delete operation, fallback to standard permissions for others
+        if route_key == RouteKey.DELETE:
+            # return [MyCustomAdminPermission()]
+            pass
+            
+        return super().get_route_dependencies(route_key, action)
 
 # Export the FastAPI router
 router_instance = {ModelName}Router()
