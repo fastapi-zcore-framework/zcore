@@ -31,7 +31,7 @@ class DummyUpdate(BaseModel):
     name: str
 
 class DummyOut(Zchema):
-    __db_name__ = "dummy"
+    __model__ = "dummy"
     id: str
     name: str
     password: str = ""
