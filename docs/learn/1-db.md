@@ -1,72 +1,79 @@
-# 🗄️ Step 1: Database Models
+# Database Models & Metadata
 
-Following our bottom-up development flow, we start at the physical database representation. In ZCore, database models are defined using asynchronous SQLAlchemy 2.0 declarative mappers.
-
-Open `products/models.py` and replace its contents with the following:
-
-```python
-import uuid
-from sqlalchemy import String, Integer, Numeric
-from sqlalchemy.orm import Mapped, mapped_column
-from zcore.db.setup import Base
-
-class Product(Base):
-    """Database representation of our Product catalog."""
-    
-    __tablename__ = "products"
-    
-    id: Mapped[uuid.UUID] = mapped_column(
-        primary_key=True, 
-        default=uuid.uuid4
-    )
-    name: Mapped[str] = mapped_column(
-        String(120), 
-        nullable=False, 
-        index=True
-    )
-    price: Mapped[float] = mapped_column(
-        Numeric(10, 2), 
-        nullable=False, 
-        default=0.0
-    )
-    stock: Mapped[int] = mapped_column(
-        Integer, 
-        nullable=False, 
-        default=0
-    )
-```
+Define your schema and auto-generate standardized permission scopes for every entity.
 
 ---
 
-## 📊 Database Column Schema
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Declarative Base</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Requirement</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>SQLAlchemy 2.0 Async</strong>
+  </div>
+</div>
 
-For reference, here is how our `Product` Python model maps directly to the underlying SQL database columns:
+## The Challenge
+In large-scale FastAPI applications, managing authorization often becomes a "string-guessing" game. Developers manually define permission strings like `"product:view"` or `"order:delete"` in routers, while the models remain unaware of these scopes. This leads to **permission drift**, where a table is renamed or a scope is mistyped, resulting in silent authorization failures or security loopholes.
 
-| Python Property | SQL Column Type | Nullable | Default / Behavior |
-| :--- | :--- | :--- | :--- |
-| 🆔 `id` | `UUID` | ❌ No | Primary Key, Auto-generated UUIDv4 |
-| 📝 `name` | `VARCHAR(120)` | ❌ No | Indexed for high-performance searches |
-| 💰 `price` | `NUMERIC(10, 2)` | ❌ No | `0.0` (Uses precise decimal scale) |
-| 📦 `stock` | `INTEGER` | ❌ No | `0` (Represents physical inventory) |
+## The ZCore Elegance
+ZCore's `Base` is a thin extension of SQLAlchemy's `DeclarativeBase`. It provides a centralized `.actions()` method that dynamically generates a structured `Actions` object based on the `__tablename__`. These actions are then used by ZCore routers and security layers to enforce consistent authorization without hardcoded strings.
+
+=== "ZCore Model with Actions"
+        :::python
+        from zcore import Base
+        from sqlalchemy.orm import Mapped, mapped_column
+        import uuid
+
+        class Product(Base):
+            __tablename__ = "products"
+            
+            id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+            name: Mapped[str] = mapped_column()
+
+        # ZCore automatically provides:
+        # Product.actions().CREATE   -> "products:create"
+        # Product.actions().VIEW     -> "products:view"
+        # Product.actions().DELETE   -> "products:delete"
+        # Product.actions().LISTVIEW -> "products:listview"
+
+=== "Manual SQLAlchemy Approach"
+        :::python
+        # Standard SQLAlchemy models don't know about permissions.
+        # You are forced to manually manage strings elsewhere:
+        class Product(Base):
+            __tablename__ = "products"
+            id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+
+        # In your security layer:
+        PRODUCT_CREATE = "products:create" # Manual string
+        PRODUCT_VIEW = "products:view"     # Manual string
+        # High risk of typos and zero link to the actual model class.
 
 ---
 
-## 🛡️ Why ZCore Recommends UUIDs
+## Boundaries & Integration
+ZCore does not hide SQLAlchemy; it empowers it.
 
-!!! info "🛡️ Distributed Identifier Security"
-    ZCore uses `uuid.UUID` (specifically UUIDv4) as the default primary key instead of auto-incrementing integers. 
-    Sequential integer IDs (`1, 2, 3...`) expose business metrics (e.g., total products or orders) through simple iteration, and are vulnerable to malicious URL scanning. UUIDs provide distributed identifier safety, allowing you to generate safe IDs client-side or on decoupled nodes without risk of primary key collisions.
+*   **Standard SQLA 2.0:** Because `Base` inherits from `DeclarativeBase`, you use the modern `Mapped` and `mapped_column` syntax exactly as documented in SQLAlchemy 2.0.
+*   **Bypass:** If you do not wish to use ZCore's authorization system, you can still use the `Base` class for standard migrations and queries without ever calling `.actions()`.
+*   **Custom Engines:** While `db_manager` provides a pre-configured `AsyncEngine`, you can still create your own SQLAlchemy engine and bind ZCore models to it—they are 100% compatible with standard `AsyncSession` operations.
 
 ---
 
-## 📋 Declaring Table Metadata
+## Under-the-Hood Spec
 
-By inheriting from `Base`, the `Product` model is automatically registered with the metadata engine. This allows it to work with SQLAlchemy's async migration patterns and gives it access to ZCore's declarative permission mappings:
+### 1. The `Actions` Dataclass
+The `Actions` object is an immutable, frozen dataclass [setup.py]. When `Base.actions()` is called, ZCore iterates over the internal fields of the `Actions` class and interpolates the `__tablename__` to create unique, namespaced permission keys. This ensures that permission names are always derived directly from the source of truth—the database schema.
 
-```python
-# ZCore automatically generates table permission actions:
-# Product.actions().VIEW   -> "products:view"
-# Product.actions().CREATE -> "products:create"
-```
+### 2. Intelligent Connection Pooling
+The `DatabaseManager.init_app` method contains specific logic for SQLite vs. server-based databases (PostgreSQL/MySQL) [setup.py]. For SQLite, it disables `pool_size` and `max_overflow` to prevent locking issues common with file-based databases, while enabling high-performance connection pooling and `pool_pre_ping` for production-grade relational servers.
 
-In the next step, we will define the Pydantic schemas that validate data payload boundaries for these model fields.
+### 3. Lifecycle Awareness
+ZCore models are designed to be used with the `db_manager.session()` context manager. This manager ensures that if an exception occurs during a database operation, `session.rollback()` is invoked automatically before the error is propagated, keeping your database state clean without manual `try/except` blocks in every service.

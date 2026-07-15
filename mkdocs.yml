@@ -11,13 +11,6 @@ theme:
   logo: assets/logo.png
   favicon: assets/favico.png
   palette:
-    - media: "(prefers-color-scheme: light)"
-      scheme: default
-      primary: teal
-      accent: purple
-      toggle:
-        icon: material/weather-sunny
-        name: Switch to dark mode
     - media: "(prefers-color-scheme: dark)"
       scheme: slate
       primary: teal
@@ -39,6 +32,9 @@ markdown_extensions:
   - codehilite
   - pymdownx.tabbed
   - admonition
+
+extra_css:
+  - overrides.css
 
 nav:
   - Home: index.md
@@ -91,5 +87,6 @@ nav:
           - Distributed Caching: features/ecosystem/cache.md # Covers: BaseCache/TTLLRUCache fallback, Pydantic type validation on cache hits, eviction loop safety, weakref
           - File Storage & Security: features/ecosystem/storage.md # Covers: LocalStorageProvider, MaxFileSize/SafeMimeType validators, Magic bytes validation, UUID truncation
           - WebSocket Streaming: features/ecosystem/stream.md # Covers: StreamManager, Redis PubSub fallback, queue overflow protection, subscription context manager
-          
-  - Pocket Reference & Cheat Sheet: cheatsheet.md
+
+  - Quick Views:          
+    - Pocket Reference & Cheat Sheet: cheatsheet.md

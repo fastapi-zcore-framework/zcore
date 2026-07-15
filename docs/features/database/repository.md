@@ -1,93 +1,92 @@
-# 🏛️ Repository Pattern
+# Repository Pattern
 
-ZCore uses the **Repository Pattern** to isolate data access logic from your core business logic. This modest abstraction ensures that your database interactions are consistent, reusable, and easy to test, regardless of how complex your queries become.
-
----
-
-## 📐 Generic Repository Architecture
-
-The `BaseRepository` is built using specialized mixins. This design allows you to understand exactly what capabilities a repository has based on the mixins it inherits.
-
-```mermaid
-flowchart TD
-    AbstractRepository[AbstractRepository] --> ReadMixin[ReadRepositoryMixin]
-    AbstractRepository --> WriteMixin[WriteRepositoryMixin]
-    AbstractRepository --> SearchMixin[SearchRepositoryMixin]
-    
-    ReadMixin --> BaseRepository[BaseRepository]
-    WriteMixin --> BaseRepository
-    SearchMixin --> BaseRepository
-
-```
+Decouple business logic from database execution with high-performance, type-safe, and reusable data interfaces.
 
 ---
 
-## 🔍 1. Read Operations (`ReadRepositoryMixin`)
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Data Access Layer</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>SQLAlchemy 2.0 / Pydantic V2</strong>
+  </div>
+</div>
 
-The read mixin manages safe and optimized database queries. It handles everything from simple lookups to complex lists.
+## The Challenge
+In many FastAPI projects, database queries are scattered directly inside route handlers. This leads to:
+- **Repetitive Query Logic:** Manually writing `session.execute(select(...))` and `.scalars().all()` for every endpoint.
+- **Leaky Abstractions:** Changing a column name in the database forces you to find and update logic in dozens of router files.
+- **Testing Hardship:** Mocking a raw `AsyncSession` with complex chain calls is significantly harder than mocking a high-level `get_by_id` method.
+- **Inconsistent Pagination:** Different developers implementing offset or cursor logic differently, leading to unpredictable API behavior.
 
-### ⚡ Fast-Path Optimization
-Database round-trips can be expensive. ZCore includes a modest optimization in `get_by_ids`: if an empty list is passed, it bypasses the database entirely and returns an empty sequence, saving unnecessary network latency.
+## The ZCore Elegance
+The `BaseRepository` provides a robust, pre-optimized set of CRUD and search operations. It leverages Python generics to ensure type safety across your domain and integrates seamlessly with ZCore’s specialized search and pagination engines. By inheriting from the repository, you gain standardized methods for batch operations, partial updates, and optimized existence checks out of the box.
 
-```python
-async def get_by_ids(self, ids: List[Any], ...) -> Sequence[ModelType]:
-    # Fast path: Skip database hit entirely if input is empty
-    if not ids:
-        return []
+=== "ZCore Repository"
+        :::python
+        from zcore import BaseRepository
+        from .models import User
+        from .schemas import UserCreate, UserUpdate
+
+        class UserRepository(BaseRepository[User, UserCreate, UserUpdate]):
+            def __init__(self, db: AsyncSession):
+                super().__init__(model=User, db=db)
+                
+            # Custom logic remains clean and isolated
+            async def get_active_users(self):
+                query = self._get_base_query().where(User.is_active == True)
+                result = await self.db.execute(query)
+                return result.scalars().all()
         
-    query = select(self.model).where(self.pk.in_(ids))
-    result = await self.db.execute(query)
-    return result.scalars().all()
-```
+=== "Manual SQLAlchemy Implementation"
+        :::python
+        # Repetitive boilerplate required for every entity
+        async def get_user(db: AsyncSession, user_id: uuid.UUID):
+            query = select(User).where(User.id == user_id)
+            result = await db.execute(query)
+            return result.scalars().first()
+
+        async def update_user(db: AsyncSession, user_id: uuid.UUID, data: UserUpdate):
+            query = select(User).where(User.id == user_id)
+            user = (await db.execute(query)).scalars().first()
+            if user:
+                for key, value in data.model_dump().items():
+                    setattr(user, key, value)
+                await db.flush()
+            return user
 
 ---
 
-## 📝 2. Write Operations (`WriteRepositoryMixin`)
+## Boundaries & Integration
+ZCore Repositories are designed to be thin wrappers that expose the full power of SQLAlchemy.
 
-The write mixin handles the creation, modification, and removal of database records. 
-
-### 🔄 Flush Over Commit (UoW Harmony)
-To coordinate with ZCore's **Unit of Work** pattern, repositories do not call `commit()` directly. Instead, they use `flush()`. This pushes your changes to the database's transaction log and retrieves auto-generated fields (like IDs) without ending the transaction. This allows the Unit of Work to decide when the final "Save" happens.
-
-| Method | Database Action | Lifecycle Behavior |
-| :--- | :--- | :--- |
-| ✨ `create` | `INSERT` | Flushes and refreshes the instance. |
-| 🛠️ `update` | `UPDATE` | Applies partial or full patches to a record. |
-| 🗑️ `delete` | `DELETE` | Removes the record from the session context. |
+- **Standard AsyncSession:** The `self.db` attribute is a standard `AsyncSession`. You can execute any raw SQL or complex SQLAlchemy expression whenever the scaffolded methods are insufficient.
+- **Query Extensibility:** Use `_get_base_query()` to define default filters (e.g., Soft Delete logic) and `_extend_query()` for custom joins that should apply to all read operations.
+- **Eager Loading:** All read methods (`get`, `get_list`, etc.) accept an `options` parameter for standard SQLAlchemy loader options like `joinedload` or `selectinload`.
+- **Selective Loading:** The `fields` parameter allows you to perform `load_only` queries, ensuring you only fetch the data you actually need from the wire.
 
 ---
 
-## 🧪 3. Dynamic Search (`SearchRepositoryMixin`)
+## Under-the-Hood Spec
 
-This mixin bridges your repository with ZCore's **Search Engine**. It allows you to perform complex, policy-validated searches with minimal code.
+### 1. Automatic PK Inspection
+Upon initialization, `BaseRepository` uses the SQLAlchemy `inspect` module to automatically identify the model's primary key [db/repository.py]. It maps this to `self.pk` and `self.pk_name`, allowing the generic CRUD methods to work regardless of whether your primary key is named `id`, `uuid`, or a custom field.
 
-```python
-async def search(self, search_in: SearchRequest, pagination: Any = None) -> Any:
-    from zcore.db.search import SearchEngine
-    engine = SearchEngine(self.model)
-    query = engine.build_base_query(search_in)
-    
-    if pagination is None:
-        result = await self.db.execute(query)
-        return result.scalars().all()
-        
-    # Automatically chooses Cursor or Page pagination based on params
-    paginator = CursorPagination(self.cursor_field) if isinstance(pagination, CursorParams) else PageNumberPagination()
-    return await paginator.paginate(self.db, query, pagination, self.model)
-```
+### 2. The `get_by_ids` Fast Path
+The `get_by_ids` implementation includes a high-performance "fast path" [db/repository.py]. If an empty list is passed as the `ids` parameter, the repository returns an empty sequence immediately without making a network round-trip to the database engine.
 
----
+### 3. Optimized Existence Checks
+The `exist()` method is optimized for minimal database overhead [db/repository.py]. Instead of loading a full model instance, it executes a `select(1).where(...)` with a `limit(1)` clause, which is significantly faster and consumes less memory on both the application and database server.
 
-## 💡 Engineering Insights
+### 4. Flush-Oriented Mutations
+All write operations (`create`, `update`, `delete`) in the repository use `await self.db.flush()` and `await self.db.refresh()` instead of `commit()` [db/repository.py]. This ensures that changes are validated by the database but remain part of an open transaction, allowing the `UnitOfWork` to manage the final atomic commit boundary.
 
-!!! info "🛡️ Type Safety & Generics"
-    By utilizing Python Generics (`BaseRepository[Model, CreateSchema, UpdateSchema]`), ZCore provides full IDE auto-completion. This ensures that you don't accidentally pass an `OrderUpdate` schema to a `ProductRepository`.
-
-!!! tip "💡 Custom Query Extensions"
-    If you need highly specialized SQL (e.g., complex reporting or raw queries), we suggest extending the repository class in your domain module. This keeps all SQL-related code in one place, separate from your business rules.
-    ```python
-    class ProductRepository(BaseRepository[...]):
-        async def get_out_of_stock_by_category(self, category_id: int):
-            # Write your custom SQLAlchemy query here
-            ...
-    ```
+!!! info "Cursor Field"
+    By default, the repository uses the primary key as the `cursor_field` for keyset pagination. You can override this in your subclass (e.g., `self.cursor_field = "created_at"`) to support stable pagination on chronological data.

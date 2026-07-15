@@ -1,164 +1,93 @@
-# 🎭 How-To: Role-Based Dynamic Field Masking
+# Dynamic Role-Based Field Masking
 
-## ❓ The Problem
-
-Many applications handle sensitive data (such as user salaries, bank details, or internal notes) that should only be visible to specific authorized roles (like administrators or HR). 
-
-Instead of writing separate endpoints or complex database views for each role, you need a way to dynamically mask or prune sensitive fields from your API responses on the fly, without altering your core database models or query logic.
+Automatically prune sensitive data from inputs and outputs based on granular, context-aware security policies.
 
 ---
 
-## 🛠️ The ZCore Solution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Context Shielding</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Recommended Core</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Pydantic V2 / contextvars</strong>
+  </div>
+</div>
 
-We suggest using ZCore's `Zchema` base class along with the thread-safe `restricted_fields_context`. The `Zchema` class automatically intercepts schema generation, input validation, and response serialization to prune restricted fields — all without any web-layer middleware.
+## The Challenge
+Modern APIs often deal with "Multifaceted Data"—where the same record (e.g., a **User Profile**) has different visible fields depending on who is asking.
+1.  **The Public** should only see `username` and `avatar`.
+2.  **The Owner** should also see `email` and `billing_address`.
+3.  **The Admin** should see everything, including `internal_notes` and `risk_score`.
 
-```mermaid
-graph TD
-    Request[Incoming API Request] -->|Extract Role| Check{Is User Admin?}
-    Check -->|No: Standard User| Bind[set_restricted_fields: employee.salary & employee.bank_account_number]
-    Check -->|Yes: Admin| Exec[Execute business logic query]
-    
-    Bind --> Exec
-    Exec -->|Returns Zchema model| Serialize[Zchema.secure_serializer]
-    Serialize -->|Prune restricted fields| Output[JSON Response payload without sensitive data]
-```
+In standard FastAPI, this usually forces developers to create a separate Pydantic model for every role (`UserPublic`, `UserPrivate`, `UserAdmin`) and write complex `if/else` logic in routers to choose the correct model. This is error-prone and causes "Schema Explosion."
 
----
+## The ZCore Elegance
+ZCore's `Zchema` allows you to define **one model** for all roles. By setting the `__model__` attribute, the schema becomes "context-aware." When the request starts, your security middleware populates a list of `restricted_fields` (e.g., `["users.internal_notes"]`). ZCore then automatically strips these fields from incoming JSON payloads (Mass Assignment protection) and outgoing JSON responses (Leakage protection).
 
-### 📦 Step 1: Define Your Schema with `Zchema`
+=== "ZCore Context Masking"
+        :::python
+        from zcore import Zchema, request_context
 
-All schemas must inherit from `Zchema` and declare a `__db_name__` that binds them to their database domain:
+        class UserSchema(Zchema):
+            __model__ = "users" # Ties to the 'users' domain
+            
+            username: str
+            email: str
+            internal_notes: str | None = None
 
-```python
-from zcore import Zchema
-from pydantic import Field, ConfigDict
-import uuid
+        # Inside a middleware or dependency:
+        restricted = ["users.internal_notes"]
+        if not user.is_admin:
+            with request_context(user_id=user.id, fields=restricted):
+                # Outgoing response now automatically 
+                # masks 'internal_notes'
+                return UserSchema.model_validate(user_record)
 
-class EmployeeResponse(Zchema):
-    __db_name__ = "employee"
-    id: uuid.UUID
-    name: str
-    salary: float            # Will be pruned for non-admin users
-    bank_account_number: str # Will be pruned for non-admin users
+=== "FastAPI Manual Projection"
+        ::python
+        # Multiple models required
+        class UserPublic(BaseModel):
+            username: str
 
-    model_config = ConfigDict(from_attributes=True)
-```
+        class UserPrivate(UserPublic):
+            email: str
+            internal_notes: str
 
----
-
-### 🛡️ Step 2: Implement a Scoped Restriction Dependency
-
-Create a FastAPI dependency that evaluates the authenticated user's permissions and binds restricted fields to the context using the `{db_name}.{field}` syntax:
-
-```python
-from fastapi import Depends
-from zcore.context import set_restricted_fields
-from zcore.security.dependencies import get_current_user_stub
-from zcore.security.protocols import UserProtocol
-
-async def apply_security_field_restrictions(
-    user: UserProtocol = Depends(get_current_user_stub)
-) -> None:
-    """Evaluate user roles and bind restricted fields to the active context."""
-    restricted_paths = set()
-
-    # If the user is not a superuser, restrict sensitive fields
-    if not getattr(user, "is_superuser", False):
-        # Use the domain-specific namespace: {db_name}.{field}
-        restricted_paths.update([
-            "employee.salary",
-            "employee.bank_routing_number",
-            "employee.bank_account_number"
-        ])
-
-    # Bind the restricted paths to the request-scoped context
-    set_restricted_fields(restricted_paths)
-```
+        @router.get("/users/{id}")
+        async def get_user(id: uuid.UUID, user: User = Depends(get_user)):
+            record = await db.get(id)
+            # Manual role-based branching logic
+            if user.is_admin:
+                return UserPrivate.model_validate(record)
+            return UserPublic.model_validate(record)
 
 ---
 
-### 🗄️ Step 3: Set Up Your Database Model & Router
+## Boundaries & Integration
+ZCore's masking logic is a non-destructive layer built on top of Pydantic.
 
-Define your database model and route configurations as usual. ZCore's router automatically integrates with the `Zchema` security pipeline:
-
-```python
-# models.py
-import uuid
-from sqlalchemy.orm import Mapped, mapped_column
-from sqlalchemy import String, Numeric
-from zcore.db.setup import Base
-
-class Employee(Base):
-    __tablename__ = "employees"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(100))
-    salary: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False, default=0.0)
-    stock: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
-```
-
-For the web layer, inject the security restrictions via the `get_route_dependencies` method:
-
-```python
-# routers.py
-from typing import Any
-from zcore.web.base_router import BaseRouter, RouteKey
-from zcore.db.pagination import PageNumberPagination
-
-from .schemas import EmployeeCreate, EmployeeUpdate, EmployeeResponse
-from .services import EmployeeService
-from .models import Employee
-from .security import apply_security_field_restrictions
-
-class EmployeeRouter(BaseRouter[EmployeeCreate, EmployeeUpdate]):
-    model = Employee
-    create_schema = EmployeeCreate
-    update_schema = EmployeeUpdate
-    schema_out = EmployeeResponse
-    service = EmployeeService
-    
-    prefix = "/employees"
-    tags = ["Employees"]
-
-    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
-        """Inject field restriction dependencies for view operations."""
-        if route_key in (RouteKey.GET, RouteKey.GET_ALL):
-            return [Depends(apply_security_field_restrictions)]
-        return super().get_route_dependencies(route_key, action)
-```
+*   **Pydantic Native:** Pruning happens during Pydantic's internal `model_validator` and `model_serializer` phases [web/projection.py]. Your logic inside the service or repository layers remains untouched—you always work with full objects.
+*   **Opt-In Masking:** If a schema does not define `__model__`, ZCore ignores it. It behaves like a standard `BaseModel`.
+*   **Freedom to Bypass:** If you need to force-send a restricted field for a specific edge case, you can use a standard `pydantic.BaseModel` for that specific route, which will bypass ZCore's context-aware pruning.
 
 ---
 
-### 🧪 Step 4: Verification
+## Under-the-Hood Spec
 
-When a non-admin user requests employee data (e.g. `GET /employees/{id}`), ZCore intercepts the response during serialization via the `Zchema.secure_serializer` hook.
+### 1. The Recursive `_prune_data` Logic
+ZCore doesn't just check top-level keys. The internal `_prune_data` method recursively traverses nested dictionaries and lists [web/projection.py]. If you restrict `orders.items.cost`, ZCore will find every `cost` field inside the `items` list of an `Order` object and remove it, regardless of the nesting depth.
 
-Even if your service layer loads the full `Employee` database object with its salary and bank details, the outgoing JSON payload is dynamically pruned:
+### 2. Dynamic JSON-Schema Pruning
+When `expose_schemas` is enabled on a router, ZCore overrides `__get_pydantic_json_schema__` [web/projection.py]. It doesn't just mask the data; it **masks the documentation**. If a user lacks permission to see `internal_notes`, that field will not appear in the JSON-Schema returned by `?schema=true`, allowing your frontend to dynamically hide form inputs.
 
-```json
-{
-  "success": true,
-  "message": "Success",
-  "data": {
-    "id": "b1b0e363-26a1-438f-9aef-88df5ee47fa2",
-    "name": "Alex Mercer"
-    // salary and bank_account_number are automatically pruned!
-  }
-}
-```
+### 3. Cache-Safe `Vary` Headers
+Because the same URL can return different JSON content based on the user's permissions, ZCore's `ZCoreAPIRoute` automatically appends `Authorization` or `Cookie` to the `Vary` HTTP header [web/api_router.py]. This ensures that downstream CDNs or browser caches do not accidentally serve a cached "Admin" response to a "Public" user.
 
----
-
-## 💡 Engineering Insights
-
-!!! tip "💡 Why `{db_name}.{field}` Instead of `resource.{field}`?"
-    The old `resource.` prefix caused namespace collisions across different domains. The new `{db_name}.{field}` syntax (e.g., `employee.salary`, `user.email`) ensures strict domain boundary isolation, preventing fields in the `billing` module from accidentally affecting fields in the `crm` module.
-
-!!! info "🛡️ Three Tiers of Protection"
-    `Zchema` doesn't just prune responses. It also:
-    1. **Prunes JSON Schemas** when clients request `?schema=true`
-    2. **Strips restricted fields from incoming payloads** (prevents Mass Assignment)
-    3. **Prunes outgoing responses** during native Pydantic serialization
-
-!!! note "🧠 Caching Safety"
-    ZCore's `ZCoreAPIRoute` automatically appends `Authorization` or `Cookie` parameters to the response's `Vary` header whenever restricted fields are active. This instructs upstream reverse-proxies that the response varies based on user credentials, preventing data leaks across shared caches.
+!!! info "Security Policy"
+    Restricted fields are defined as dot-paths (e.g., `model_name.field_name`). To restrict an entire model, you can use the model name itself (e.g., `users`). This will cause the entire schema to return an empty object if the user is unauthorized.

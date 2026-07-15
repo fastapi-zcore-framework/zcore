@@ -1,83 +1,77 @@
-# 🛠️ Command-Line Scaffolding Tool (CLI)
+# CLI Scaffolding & Orchestration
 
-The `zc` command-line utility is a modest but practical tool designed to help you maintain a consistent project structure. It automates the repetitive task of creating files and folders, ensuring that every module in your system follows the same architectural blueprint.
-
----
-
-## 📋 Core Scaffolding Commands
-
-The `zc` CLI supports four primary operations to help you move from an idea to a running service in minutes.
-
-| Command | Usage | Resulting Files | Purpose |
-| :--- | :--- | :--- | :--- |
-| ✨ **`init`** | `zc init <name>` | `main.py`, `.env`, `requirements.txt` | Initializes a new project root. |
-| 🚀 **`startapp`** | `zc startapp <name>` | `models.py`, `services.py`, `plugin.py`, etc. | Scaffolds a modular domain plugin. |
-| 🔥 **`run`** | `zc run` | *(Uvicorn Process)* | Launches the local development server. |
-| 🔑 **`gensecret`** | `zc gensecret` | `64-char-hex-string` | Generates a secure `SECRET_KEY`. |
+Standardize your project structure and automate repetitive boilerplate generation with a professional command-line interface.
 
 ---
 
-## 📐 Scaffolding Architecture
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Management Utility</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Highly Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Pathlib / secrets / subprocess</strong>
+  </div>
+</div>
 
-The CLI is engineered to prevent common naming mistakes. It ensures that your files are valid Python modules and your database tables follow clean `snake_case` naming conventions.
+## The Challenge
+FastAPI is intentionally minimalist, which means it lacks a built-in project generator or application "scaffolder" like Django's `startapp`. This leads to:
+1.  **Structural Inconsistency:** Different projects within the same team follow different folder patterns.
+2.  **Boilerplate Fatigue:** Developers spend hours manually creating `models.py`, `schemas.py`, `repositories.py`, and `services.py` for every new domain.
+3.  **Pathing Issues:** Difficulty managing `PYTHONPATH` so that modular sub-apps can import each other without complex hacks.
+4.  **Insecure Defaults:** Developers often use weak, hardcoded secret keys during initial setup.
 
-```mermaid
-flowchart TD
-    CLI[zc startapp product_catalog] -->|Identifier Check| Check{Is Name Valid?}
-    Check -->|No| Reject[🚨 Abort & Explain Why]
-    Check -->|Yes| Format[Convert snake_case to PascalCase]
-    Format -->|Map Templates| Template[ProductCatalog Model & Tables]
-    Template -->|Write to Disk| Disk[Generate products_catalog/ folder]
-```
+## The ZCore Elegance
+The `zc` CLI tool provides a unified command set to initialize projects, scaffold modular domain-driven apps, and launch a pre-configured development server. It enforces the ZCore architectural standards while generating cryptographically secure environment files.
 
-### 🛡️ Guardrails for Consistency
-Before creating any files, the CLI verifies your input against Python's naming rules. This prevents issues where an app name might conflict with Python keywords or contain invalid characters.
+=== "ZCore CLI Orchestration"
+        :::bash
+        # 1. Initialize a new project with secure secrets
+        zc init my_api
+        cd my_api
 
----
+        # 2. Scaffold a domain with full Repository/Service logic
+        zc startapp inventory --template
 
-## 📝 Scaffolding Options
+        # 3. Launch the server with correct PYTHONPATH
+        zc run
 
-ZCore offers two ways to generate your application modules depending on how much control you want from the start:
-
-1.  **Clean Slate:** Running `zc startapp products` creates the necessary files but keeps them empty, allowing you to define your logic from a blank canvas.
-2.  **Guided Template:** Running `zc startapp products -t` (or `--template`) pre-populates the files with working ZCore boilerplates. This includes a sample Model, Schema, Repository, Service, and Router already wired together.
-
----
-
-## 💻 Practical Usage Guide
-
-### 1. Initialize a Project
-When you run `init`, ZCore automatically generates a `.env` file pre-configured with a unique, cryptographically secure secret key.
-
-```bash
-zc init my_new_api
-cd my_new_api
-```
-
-### 2. Scaffold a New Domain App
-We recommend using the `-t` flag for your first few modules to see how the layers are intended to interact.
-
-```bash
-# Generates a structured module with boilerplate code
-zc startapp order_management -t
-```
-
-### 3. Launch the Development Server
-The `run` command is a modest wrapper around Uvicorn. It automatically looks for your `.env` file to set the correct host and port.
-
-```bash
-zc run
-```
+=== "Standard Manual Scaffolding"
+        :::bash
+        # Standard projects require manual labor for every module:
+        mkdir -p inventory
+        touch inventory/__init__.py inventory/models.py inventory/services.py
+        # (Open editor, manually write 100+ lines of CRUD boilerplate)
+        # (Manually manage .env and secret generation)
+        # (Manually run uvicorn with path overrides)
+        PYTHONPATH=. uvicorn main:app --reload
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
+The CLI is a developer productivity tool, not a runtime dependency.
 
-!!! tip "💡 Why use the CLI?"
-    Consistency is the key to maintainability. By using the CLI, you ensure that every developer on your team starts with the same file names and the same structural patterns, making it much easier to navigate the codebase as it grows.
+*   **Standard Python Output:** Every file generated by `zc` is a standard `.py` file based on the templates in `zcore.cli.templates`. You can delete the CLI and your project will continue to function perfectly.
+*   **Uvicorn Wrapper:** The `zc run` command is a wrapper around `subprocess.run` calling `uvicorn`. It reads the `HOST` and `PORT` directly from your `.env` file to ensure the CLI environment matches your application settings [cli/commands.py].
+*   **Plugin Registration:** After running `startapp`, ZCore reminds you to register the generated `Plugin` in your `Kernel`. The CLI does not "magically" modify your `main.py` code to prevent accidental corruption of your project logic.
 
-!!! info "🔑 Secret Key Generation"
-    The `gensecret` command uses Python's standard `secrets` module to generate a 256-bit token. You should use this to replace the default `SECRET_KEY` in your production environment to ensure your JWT tokens are securely signed.
+---
 
-!!! warning "🛡️ Valid Identifiers"
-    If you try to name an app `123-app` or `my app`, the CLI will block the operation. Python modules must start with a letter and contain only alphanumeric characters or underscores.
+## Under-the-Hood Spec
+
+### 1. Cryptographically Secure Secret Generation
+The `zc init` and `zc gensecret` commands use the `secrets` module (specifically `secrets.token_hex(32)`) [cli/commands.py]. This ensures that every ZCore project starts with a unique, high-entropy 64-character secret key, mitigating common production vulnerabilities caused by weak default keys.
+
+### 2. Dynamic PYTHONPATH Injection
+Modular applications often fail to resolve imports when running via raw `python` or `uvicorn`. The `zc run` command dynamically modifies the execution environment by setting `env["PYTHONPATH"] = "."` [cli/commands.py]. This ensures that your modular plugins can use clean, absolute imports (e.g., `from inventory.models import Stock`) regardless of the current working directory.
+
+### 3. Identifier & Path Validation
+Before creating any files, the CLI validates that the project and app names are valid Python identifiers using `name.isidentifier()` [cli/main.py]. It also utilizes `pathlib` for strict collision checks, preventing the CLI from overwriting existing files if a developer runs a scaffolding command by mistake.
+
+!!! info "CLI Help"
+    Run `zc --help` to see all available commands, including `gensecret` for rotating keys and version checks.

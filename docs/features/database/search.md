@@ -1,94 +1,111 @@
-# 🔍 Dynamic Search Engine
+# Dynamic Search Engine
 
-ZCore’s search engine is a modest tool designed to handle the heavy lifting of data discovery. It translates client-supplied criteria—like nested filters, sorting rules, and relationship preloading—into safe and performant database queries without requiring you to write custom SQL for every request.
-
----
-
-## 🛡️ Safety & Security Layers
-
-Dynamic query interfaces can be risky if not properly guarded. To prevent SQL injection, performance exhaustion, or unauthorized data access, the `SearchEngine` implements several engineering safeguards.
-
-```mermaid
-flowchart TD
-    Request[Incoming SearchRequest] -->|Security Check| Guard[Check Restricted Fields]
-    Guard -->|Forbidden Access| Deny[Raise ForbiddenError]
-    Guard -->|Safe| DepthCheck{Join Depth <= 3?}
-    DepthCheck -->|No| Reject[Raise ValidationError]
-    DepthCheck -->|Yes| Coerce[Coerce Value Types]
-    Coerce -->|Sanitize SQL| Build[Compile Optimized SQL]
-```
-
-### 1. Restricted Field Guard
-Before a query is even compiled, the engine cross-references all requested fields and paths against the active security context. If a user is not authorized to see a field (e.g., `internal_cost` or `hashed_password`), the engine blocks the query immediately.
-
-```python
-# Internal logic: matches paths against domain-bound restricted fields (e.g., 'user.email', 'product.price')
-if normalized_path == normalized_restricted or normalized_path.startswith(normalized_restricted + "."):
-    return True # Block access
-```
-
-### 2. Relationship Depth Limits
-Deep joins (e.g., fetching a product's category's owner's profile) can significantly slow down a database. To maintain stability, ZCore limits relationship preloading to a maximum depth of **3 levels**.
-
-### 3. Wildcard Sanitization
-To prevent "expensive" string searches that can lock up database resources, ZCore automatically escapes SQL wildcards (`%` and `_`) provided by the client. This ensures that `ilike` operations behave exactly as expected without unintended side effects.
-
-### 4. Smart Type Coercion
-Since search parameters arrive as JSON (strings, numbers, or booleans), the engine intelligently converts them to the correct Python types required by your database columns, such as `UUID`, `datetime`, or `Decimal`.
+Securely translate structured JSON filters, complex sorting, and relational eager-loading into optimized SQLAlchemy queries.
 
 ---
 
-## 🧪 Search Request Structure
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Query Utility</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>SQLAlchemy 2.0 / Pydantic</strong>
+  </div>
+</div>
 
-The `SearchRequest` is a structured way for clients to ask for exactly what they need. It is divided into four main parts:
+## The Challenge
+Building a truly dynamic search endpoint (e.g., `POST /products/search`) in standard FastAPI is a security and maintenance nightmare. Developers often face:
+1.  **Manual Filter Mapping:** Writing endless `if` statements for every possible combination of `price_gt`, `category_eq`, or `name_ilike`.
+2.  **Unsafe Joins:** Manually managing table joins for relational filters, often leading to duplicate rows or Cartesian products.
+3.  **Recursive DoS:** Deeply nested "OR" and "AND" JSON filters that can crash a database if the query complexity isn't limited.
+4.  **Security Leaks:** Clients accidentally filtering or sorting by restricted fields (like `margin` or `internal_id`) that should be hidden from their role.
 
-| Component | Purpose | Example |
-| :--- | :--- | :--- |
-| **`filters`** | Logical conditions for finding data. | `price > 100 AND stock > 0` |
-| **`include`** | Related data to "eager load" in one go. | `["category", "tags"]` |
-| **`sort`** | The order of the results. | `[{"field": "created_at", "order": "desc"}]` |
-| **`pagination`** | How many items to return and where to start. | `size: 20, page: 1` |
+## The ZCore Elegance
+The `SearchEngine` provides a secure, JSON-driven query builder. It parses a `SearchRequest` object containing nested filters, sorting rules, and relation-preload paths. It automatically coerces types, validates the request against active context restrictions, and limits the query depth to prevent resource exhaustion.
 
-### Example Payload
-```json
-{
-  "filters": [
-    { "field": "stock", "op": "gt", "value": 0 },
-    {
-      "op": "or",
-      "items": [
-        { "field": "name", "op": "ilike", "value": "coffee" },
-        { "field": "tags.name", "op": "eq", "value": "organic" }
-      ]
-    }
-  ],
-  "include": ["category"],
-  "sort": [{ "field": "price", "order": "asc" }]
-}
-```
+=== "ZCore Dynamic Search"
+        :::python
+        from zcore.db import SearchRequest, SearchEngine
+
+        # 1. Define a structured search payload
+        request = SearchRequest(
+            filters=[
+                {"field": "price", "op": "gt", "value": 100},
+                {"op": "or", "items": [
+                    {"field": "category.name", "op": "eq", "value": "Electronics"},
+                    {"field": "tags", "op": "ilike", "value": "premium"}
+                ]}
+            ],
+            include=["category", "tags"],
+            sort=[{"field": "price", "order": "desc"}]
+        )
+
+        # 2. Build and execute securely via Repository
+        results = await product_repository.search(request)
+
+=== "FastAPI Raw Manual Filtering"
+        :::python
+        # Replicating dynamic logic requires hundreds of lines:
+        @router.get("/search")
+        async def manual_search(
+            price_gt: float = None, 
+            category: str = None,
+            db: AsyncSession = Depends(get_db)
+        ):
+            query = select(Product)
+            if price_gt:
+                query = query.where(Product.price > price_gt)
+            if category:
+                query = query.join(Category).where(Category.name == category)
+            
+            # Manually handling nested OR/AND is almost impossible
+            # to write safely and generically for every endpoint.
+            result = await db.execute(query)
+            return result.scalars().all()
 
 ---
 
-## 🛠️ Supported Operators
+## Search Workflow
+The `SearchEngine` validates and compiles the request through a strict security-first pipeline.
 
-The search engine supports a practical set of operators to handle most real-world filtering needs:
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/search.png" 
+  alt="Search Workflow" width="700">
+</p>
 
-| Operator | SQL equivalent | Description |
-| :--- | :--- | :--- |
-| `eq` / `ne` | `=` / `!=` | Equals or Not-Equals. |
-| `gt` / `lt` | `>` / `<` | Greater-than or Less-than. |
-| `ge` / `le` | `>=` / `<=` | Greater-or-equal or Less-or-equal. |
-| `ilike` | `ILIKE` | Case-insensitive partial string match. |
-| `in` | `IN (...)` | Matches any value in a provided list. |
-| `is_null` | `IS NULL` | Checks if a field is empty (or not). |
-| `or` / `and` | `OR` / `AND` | Logical grouping for complex filters. |
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
+ZCore provides a dynamic bridge without locking you out of SQLAlchemy's native power.
 
-!!! tip "💡 Why use `include`?"
-    Using the `include` field allows you to fetch related data in a single database round-trip. ZCore uses **Joined Loading** for single items and **Select-In Loading** for collections, ensuring the most efficient query pattern is used automatically.
+*   **Select Object Return:** The core engine method `build_base_query()` returns a standard SQLAlchemy `Select` object. You can still apply additional `.where()` clauses or `.limit()` before execution.
+*   **Custom Handlers:** If a specific field requires complex custom logic (e.g., a full-text search vector), you can register a custom handler: `engine.register_handler("full_text", my_handler_func)`.
+*   **Bypass:** If you only need simple primary key lookups, use the repository's `get()` or `get_by_ids()` methods instead of the search engine to save processing overhead.
 
-!!! info "🛡️ Access Denied?"
-    If you receive a `ForbiddenError` during a search, it is likely because one of the fields in your `filters`, `sort`, or `include` has been restricted in the current request context. This is ZCore's way of preventing accidental data exposure.
+---
+
+## Under-the-Hood Spec
+
+### 1. Recursive Depth Protection
+To defend against "Recursive DoS" attacks, the `SearchEngine` enforces a `max_depth` limit (default: 3) [db/search.py]. If a client sends a JSON payload with more than 3 levels of nested `or`/`and` operators, the engine raises a `ValidationError` before any SQL is generated.
+
+### 2. Intelligent Loader Strategy
+The engine automatically chooses the most efficient SQLAlchemy loader [db/search.py]. It inspects the model relations:
+-   **`joinedload`**: Used for many-to-one or one-to-one relationships to minimize queries.
+-   **`selectinload`**: Used for one-to-many or many-to-many collections to avoid Cartesian products and "N+1" problems.
+
+### 3. Safe Type Coercion
+Since JSON sends everything as primitives (strings/numbers), the engine uses model inspection to coerce values [db/search.py]. It automatically detects if a target column is a `uuid.UUID`, `date`, or `datetime` and attempts to parse the incoming string using ISO 8601 standards before creating the comparison expression.
+
+### 4. Wildcard Sanitization
+For `ilike` operations, ZCore automatically escapes SQL-sensitive wildcards (`%`, `_`, `\`) [db/search.py]. This prevents clients from performing "blind" wildcard searches that could lead to full-table scans and performance degradation.
+
+!!! info "Security Isolation"
+    The SearchEngine is strictly integrated with `zcore.context`. If a field dot-path (e.g., `category.secret_code`) is restricted in the active user context, any attempt to filter, sort, or include that field will result in a `ForbiddenError`.

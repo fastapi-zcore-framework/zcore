@@ -1,108 +1,103 @@
-# ⚙️ Business Logic Layer (Base Service)
+# Business Service Orchestration
 
-The service layer is the modest heart of your application's logic. It acts as a bridge between the raw data access of the Repository and the web requests of the Router. Its primary job is to orchestrate business rules and ensure that database transactions are handled safely and atomically.
-
----
-
-## 🎣 Base Service Lifecycle Hooks
-
-ZCore's `BaseService` provides built-in "hooks" that run automatically around database modifications. These hooks allow you to validate, clean, or enrich your data without cluttering the core logic of saving to the database.
-
-The public orchestrator methods (`create`, `create_multi`, `update`, `update_multi`, `delete`, `delete_multi`) follow the **Template Method** pattern. They coordinate the execution of `pre_*` hooks, the customizable `on_*` database action, `post_*` hooks, and the `_safe_commit` boundary — in that exact order.
-
-```mermaid
-flowchart TD
-    Input[Incoming Request Payload] --> Pre[1. pre_create / pre_update / pre_delete]
-    Pre -->|Business Validation| On[2. on_create / on_update / on_delete]
-    On -->|Custom Persistence Logic| Post[3. post_create / post_update / post_delete]
-    Post -->|Prepares Events| Commit[4. _safe_commit]
-```
-
-### 📋 Available Lifecycle Hooks
-
-| Hook | Phase | Primary Use Case |
-| :--- | :--- | :--- |
-| ✨ `pre_create` | Before SQL Insert | Data sanitization and domain-level validation. |
-| ✅ `on_create` | Core database insert | Override to customize the creation logic. |
-| ✅ `post_create` | After SQL Insert | Triggering side effects like logging or metrics. |
-| 🛠️ `pre_update` | Before SQL Update | Checking permissions or calculating derived fields. |
-| 🔄 `on_update` | Core database update | Override to customize the update logic. |
-| 🔄 `post_update` | After SQL Update | Invalidating caches or notifying other systems. |
-| 🗑️ `pre_delete` | Before SQL Delete | Verifying that the record can be safely removed. |
-| 🗑️ `on_delete` | Core database delete | Override to customize the deletion logic. |
-
-!!! tip "🧠 Why `on_*` Instead of Overriding `create()`?"
-    Previously, developers overrode `create()` directly, which risked skipping hooks or the safe commit boundary. The new `on_*` methods are the **only** extension points you need for custom database/persistence logic. The orchestrator guarantees that `pre_*` hooks run first, your custom logic runs next, `post_*` hooks run after, and the transaction is committed safely — every time.
+Coordinate domain logic with transactional safety and granular lifecycle hooks.
 
 ---
 
-## 🛡️ Transaction Isolation & Safe Commits
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Domain Logic Layer</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Highly Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Python / Unit of Work</strong>
+  </div>
+</div>
 
-One of the most challenging problems in complex systems is the **Nested Commit Problem**. If multiple services each try to "save" (commit) their own work, it becomes impossible to run them all together in a single atomic transaction. If the second service fails, the first one has already saved its data, leading to a corrupted state.
+## The Challenge
+When business logic is scattered across routers, applications become fragile and hard to test. Developers struggle with:
+- **Transaction Splitting:** Sub-operations accidentally committing early, leaving the database in a partial state if a subsequent step fails.
+- **Hook Spaghetti:** Manually triggering side effects (like sending an email or clearing a cache) inside every route handler.
+- **Redundant Error Checks:** Repeating `if not item: raise HTTPException(404)` in every single endpoint.
+- **Tight Coupling:** Business rules depending directly on HTTP request objects, making them impossible to run in background tasks or CLI scripts.
 
-ZCore solves this modestly through the `_safe_commit` mechanism. This helper checks if the current operation is part of a larger **Unit of Work**:
+## The ZCore Elegance
+The `BaseService` acts as a pure business orchestrator. It wraps repository calls in a strict **Lifecycle Hook** pipeline and implements the **Safe Commit** protocol. This ensures that domain events are triggered correctly and transactions are only finalized if they are not part of a larger, external `UnitOfWork`.
 
-```python
-async def _safe_commit(self) -> None:
-    session_info = self.repository.db.info
-    
-    # If the session is wrapped in a UnitOfWork, we stay quiet and let UOW handle the commit.
-    if not session_info.get("uow_managed", False):
-        try:
-            await self.repository.db.commit()
-        except Exception:
-            await self.repository.db.rollback()
-            raise
-```
+=== "ZCore Service Orchestration"
+        :::python
+        from zcore import BaseService, Inject
+        from .repositories import OrderRepository
+        from .models import Order
 
-### 💡 How it works in practice:
+        class OrderService(BaseService[Order, OrderCreate, OrderUpdate]):
+            def __init__(self, repo: OrderRepository = Inject(OrderRepository)):
+                super().__init__(model=Order, repository=repo)
 
-*   **Standalone Mode**: When you call a service method normally, it commits its own changes immediately.
-*   **Orchestrated Mode**: When you call multiple service methods inside a `UnitOfWork` block, ZCore sets `uow_managed` to `True`. The services skip their individual commits, allowing the Unit of Work to commit everything at once at the very end.
+            async def post_create(self, model: Order):
+                # Side effect triggered automatically and safely
+                await notify_service.send_order_confirmation(model)
 
----
+            async def pre_update(self, id, schema, partial):
+                # Domain validation before DB hit
+                if schema.status == "cancelled" and not user.is_admin:
+                    raise ForbiddenError("Only admins can cancel orders")
 
-## 💻 Practical Usage
-
-When building your services, you can easily tap into these hooks to enforce business rules:
-
-```python
-from zcore.service.base import BaseService
-from zcore.exceptions.base import ValidationError
-from products.schemas import ProductCreate, ProductUpdate
-from products.models import Product
-
-class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
-    
-    async def pre_create(self, schema: ProductCreate) -> None:
-        """Enforce business rules before data reaches the repository."""
-        if schema.price > 10000 and schema.stock < 5:
-            raise ValidationError(
-                message="High-value products must be initialized with a minimum of 5 items."
-            )
-    
-    async def on_create(self, schema: ProductCreate) -> Product:
-        """Custom database/persistence logic for single-record creation.
-
-        Override this instead of the public `create()` orchestrator.
-        The orchestrator guarantees that pre/post hooks and the safe commit
-        boundary are always executed around this method.
-        """
-        # Apply any custom transformations before persisting
-        return await self.repository.create(schema)
+=== "FastAPI Manual Orchestration"
+        :::python
+        # Logic mixed with HTTP concerns in the router
+        @router.post("/")
+        async def create_order(data: OrderCreate, db: AsyncSession = Depends(get_db)):
+            # 1. Manual Validation
+            if data.amount <= 0: raise HTTPException(400)
             
-    async def post_create(self, model: Product) -> None:
-        """Logic to run after the database has flushed the new record."""
-        # This is a safe place to prepare a 'product.created' event.
-        pass
-```
+            # 2. Manual DB Logic
+            order = Order(**data.model_dump())
+            db.add(order)
+            try:
+                await db.commit() # Dangerous: might break outer transactions
+            except Exception:
+                await db.rollback()
+                raise
+                
+            # 3. Manual Side Effect (prone to being forgotten)
+            await notify_service.send_confirmation(order)
+            return order
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
+ZCore Services are framework-agnostic units that coordinate between the Web and Data layers.
 
-!!! tip "💡 Validation vs. Sanitization"
-    Use `pre_create` for **Business Logic Validation** (e.g., "Is this user allowed to buy this?"). Use Pydantic schemas for **Structural Validation** (e.g., "Is this field an integer?"). This keeps your service layer focused on rules rather than data types.
+- **Web Independent:** Services never accept `Request` objects or return `JSONResponse`. They operate strictly on Pydantic schemas and SQLAlchemy models, allowing them to be called from Routers, Background Tasks, or CLI commands.
+- **Service-to-Service DI:** Use `Inject()` in the constructor to pull in other domain services. ZCore's DI container handles the resolution and ensures correct lifecycles.
+- **Hook Bypass:** If you need to perform an operation without triggering hooks (e.g., for data migrations), you can call the "raw" methods like `on_create` or `on_update` directly.
+- **Transactional Unity:** Services automatically detect if they are running inside a `UnitOfWork` block and will defer commits to the outer orchestrator.
 
-!!! info "🛡️ Automatic Rollbacks"
-    If an exception is raised inside a `pre_` hook or during the `on_` database action, ZCore will prevent the commit and ensure the database session is rolled back. Your data remains safe and consistent.
+---
+
+## Under-the-Hood Spec
+
+### 1. The Safe Commit Protocol
+Every mutation method in `WriteServiceMixin` concludes with `await self._safe_commit()` [service/base.py]. This method inspects the database session's internal `info` dictionary for the `uow_managed` flag. If a `UnitOfWork` context is active, the service **refrains from committing**, preserving the atomicity of the larger transaction.
+
+### 2. Execution Hook Pipeline
+ZCore enforces a strict sequence for all write operations. For example, the `create` method follows this path [service/base.py]:
+1.  `pre_create(schema)`: Validation or data enrichment.
+2.  `on_create(schema)`: The actual repository write (Flush).
+3.  `post_create(model)`: Side effects like logging or events.
+4.  `_safe_commit()`: Final transactional boundary check.
+
+### 3. Automated Error Mapping
+The `ReadServiceMixin` intercepts empty repository results and automatically raises an `EntityNotFound` exception [service/base.py]. This ensures that your API consistently returns a standardized 404 response through the global exception handler without requiring manual checks in your business code.
+
+### 4. Post-Read Interceptors
+Read operations (`get`, `get_list`) include `post_get` and `post_get_multi` hooks [service/base.py]. These are ideal for calculating dynamic properties or performing permission-based masking on model attributes before they reach the web serialization layer.
+
+!!! info "Post-Search Hook"
+    The `SearchServiceMixin` also includes a `post_search` hook, allowing you to batch-process results from complex dynamic queries before returning them to the client.

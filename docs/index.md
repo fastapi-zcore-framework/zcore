@@ -198,35 +198,11 @@ GET /products?schema=true
 
 ZCore coordinates your web, context, database, and transaction layers into a single, predictable journey.
 
-```mermaid
-flowchart TB
-    A(["📥 HTTP Request"]) --> B("RequestLog<br>Scoped Session")
-    B --> C("Context Isolation<br>User + Restricted Fields")
-    C --> D("BaseRouter<br>Auth Guards")
-    D --> E("BaseService<br>Hooks")
-    E --> F("BaseRepository<br>SearchEngine")
-    F --> G("Unit of Work<br>Atomic Commit")
-    G --> H(["📤 HTTP Response"])
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/overview.png" 
+  alt="The Request Lifecycle" width="700">
+</p>
 
-     A:::edge
-     B:::node
-     C:::node
-     D:::node
-     E:::node
-     F:::node
-     G:::node
-     H:::edge
-    classDef node fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#f8fafc,font-family:system-ui
-    classDef edge fill:#064e3b,stroke:#10b981,stroke-width:3px,color:#f8fafc,font-weight:bold,font-family:system-ui
-    style A fill:#228369
-    style B fill:#228369
-    style C fill:#228369
-    style D fill:#228369
-    style E fill:#228369
-    style F fill:#228369
-    style G fill:#228369
-    style H fill:#228369
-```
 
 ---
 

@@ -1,69 +1,101 @@
-# 🧠 Step 7: Framework Orchestration (The Kernel)
+# Framework Engine & Orchestration
 
-The **Kernel** is the modest central coordinator of every ZCore application. It acts as the "brain" that manages your plugins, resolves their dependencies, and ensures that every part of your system starts and stops in the correct sequence.
-
----
-
-## 🛠️ The Kernel's Responsibilities
-
-Instead of manually importing and starting every module in your project, you hand them over to the Kernel. Here is a breakdown of what the Kernel handles for you:
-
-| Task | Purpose |
-| :--- | :--- |
-| 🧩 **Plugin Registration** | Keeping track of all active domain modules. |
-| 📐 **Dependency Analysis** | Figuring out which plugins need to start first. |
-| ⏱️ **Lifespan Management** | Triggering the `startup` and `shutdown` hooks we defined in Step 6. |
-| 💉 **Core Injection** | Registering global tools (like the Event Dispatcher) into the IoC container. |
+The central nervous system coordinating plugin lifecycles, dependency resolution, and concurrent application events.
 
 ---
 
-## 📐 Topological Dependency Sorting
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Core Orchestrator</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Infrastructure</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>graphlib / asyncio</strong>
+  </div>
+</div>
 
-When you have a complex system, plugins often rely on one another. For example, a `PaymentPlugin` might require a `DatabasePlugin` to be ready first. 
+## The Challenge
+FastAPI provides a powerful `lifespan` hook, but as the number of modules grows, managing initialization order becomes a liability. Developers often resort to:
+1.  **Fragile Sequencing:** Manually ordering database connections, cache priming, and background workers in a single function. A single misplaced line causes runtime failures.
+2.  **Coupled Event Handling:** Directly calling functions across modules (e.g., `UserService` calling `EmailService`), which creates tight coupling and makes the system harder to test or modify.
+3.  **Startup Bottlenecks:** Executing every initialization task sequentially, unnecessarily increasing the time it takes for the application to reach a "Healthy" state.
 
-The Kernel automatically analyzes the `dependencies` list of every plugin and builds a **Directed Acyclic Graph (DAG)**. It then sorts them "topologically." This is a modest way of saying it creates a perfect "to-do list" where every prerequisite is finished before the next step begins.
+## The ZCore Elegance
+The `Kernel` manages the application lifecycle through **Topological Orchestration**. It builds a dependency graph of your plugins and ensures each one starts and stops in the mathematically correct order. Complementing this, the `EventDispatcher` provides a loosely coupled communication bus where handlers execute concurrently without blocking the main event loop.
 
-```mermaid
-flowchart TD
-    DB[1. Core Database] -->|Prerequisite| Auth[2. Authentication Plugin]
-    Auth -->|Prerequisite| Products[3. Product Management]
-    Products -->|Prerequisite| Analytics[4. Usage Analytics]
-```
+=== "ZCore Kernel & Events"
+        :::python
+        # 1. Orchestration
+        kernel = Kernel()
+        kernel.add_plugin(AuthPlugin())
+        kernel.add_plugin(DatabasePlugin()) # Sorted automatically
+
+        # 2. Decoupled Communication
+        @kernel.dispatcher.subscribe("user_registered")
+        async def send_welcome_email(payload):
+            # Executes concurrently with other listeners
+            await email_provider.send(...)
+
+        # 3. Clean Integration
+        app = FastAPI(lifespan=kernel.lifespan)
+        kernel.setup(app)
+
+=== "FastAPI Raw Implementation"
+        :::python
+        # Manual, fragile ordering in a single function
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            # 1. Manual Startup Order (Risk of failure if out of sync)
+            await init_db()
+            await init_auth()
+            
+            # 2. Tight Coupling (Email must be called directly)
+            # No built-in way to dispatch events concurrently easily
+            try:
+                yield
+            finally:
+                # 3. Manual Shutdown Order
+                await close_auth()
+                await close_db()
+
+        app = FastAPI(lifespan=lifespan)
 
 ---
 
-## 💻 Initializing the Kernel
+## Orchestration Workflow
+The Kernel transforms your declarative plugin list into an executed lifecycle through a rigorous sorting and execution pipeline.
 
-To prepare your application, you simply create a Kernel instance and add your plugins to it. This usually happens in your `main.py` file:
-
-```python
-from zcore import Kernel
-from products.plugin import ProductPlugin
-
-# 1. Initialize the Kernel instance
-kernel = Kernel()
-
-# 2. Register your domain plugins
-kernel.add_plugin(ProductPlugin())
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/7-kernel.png" 
+  alt="The Unified Request Journey" width="700">
+</p>
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
+The Kernel and Dispatcher are designed to wrap around FastAPI's native async capabilities without obscuring them.
 
-!!! info "🛡️ Safety Against Cyclic Loops"
-    If you accidentally create a "circular dependency" (e.g., Plugin A depends on B, and B depends on A), the Kernel will detect this during startup and raise a `RuntimeError`. This prevents your application from entering an infinite loop or crashing in an unpredictable state.
-
-!!! tip "💡 Decoupled Communication"
-    The Kernel also manages the **Event Dispatcher**. This allows plugins to talk to each other without being "hard-coded" together. For example, the `ProductPlugin` can emit an event that the `AnalyticsPlugin` listens to, even if they don't know each other exists.
+*   **Lifespan Injection:** The `kernel.lifespan` method is a standard Python asynchronous context manager. It is passed directly to the `FastAPI` constructor, meaning the native Starlette lifecycle is what actually drives ZCore.
+*   **Decoupled Events:** The `EventDispatcher` is registered as a singleton in the `container`. You can inject it into any `BaseService` or `BaseRepository` using `Inject(EventDispatcher)` to trigger events from deep within your domain logic.
+*   **Bypass:** If you don't want to use the Plugin system, you can still use the `EventDispatcher` as a standalone library within your project to handle internal signaling.
 
 ---
 
-## 🔍 Troubleshooting the Kernel
+## Under-the-Hood Spec
 
-If your application fails to start, check the following common modest mistakes:
+### 1. Reverse-Topological Shutdown
+While startup follows a dependency path (A -> B), the Kernel ensures that shutdown occurs in **reverse order** (B -> A) [kernel/engine.py]. This ensures that shared resources, like database pools, are only closed after the domain modules using them have safely terminated.
 
-*   **Missing Dependency:** You listed a dependency in `plugin.py`, but you forgot to register that plugin with `kernel.add_plugin()`.
-*   **Startup Exception:** One of your plugins crashed inside `on_startup()`. Because the Kernel executes these in order, a crash in one plugin will safely prevent the rest of the system from starting in an unstable state.
+### 2. Concurrent Event Execution
+The `EventDispatcher.dispatch` method schedules all registered async handlers using `asyncio.gather` [kernel/events.py]. Crucially, it sets `return_exceptions=True` and logs errors within the dispatcher. This prevents a failure in a single listener (e.g., a failing email server) from crashing the entire request or the application.
 
-In our final step, we will assemble all these pieces in `main.py` and launch the application!
+### 3. Missing Dependency Assertion
+During the `_resolve_dependencies` phase, the Kernel performs a cross-reference check [kernel/engine.py]. If a plugin declares a dependency string that does not exist in the active registry, the Kernel raises a descriptive `RuntimeError`, preventing the application from starting in an incomplete state.
+
+!!! info "Event Handlers"
+    The Dispatcher supports both standard synchronous functions and `asyncio` coroutines. Synchronous handlers are executed sequentially, while asynchronous ones are gathered for concurrent execution.
