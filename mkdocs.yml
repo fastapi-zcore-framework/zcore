@@ -7,7 +7,7 @@ repo_name: fastapi-zcore-framework/zcore
 repo_url: https://github.com/fastapi-zcore-framework/zcore
 
 theme:
-  name: material
+  name: shadcn
   logo: assets/logo.png
   favicon: assets/favico.png
   palette:
@@ -34,27 +34,11 @@ theme:
 
 plugins:
   - search
-  - mkdocstrings:
-      handlers:
-        python:
-          paths: [src]
 
 markdown_extensions:
+  - codehilite
+  - pymdownx.tabbed
   - admonition
-  - pymdownx.details
-  - pymdownx.highlight:
-      anchor_linenums: true
-      line_spans: __span
-      pygments_lang_class: true
-  - pymdownx.inlinehilite
-  - pymdownx.snippets
-  - pymdownx.superfences:
-      custom_fences:
-        - name: mermaid
-          class: mermaid
-          format: !!python/name:pymdownx.superfences.fence_code_format
-  - pymdownx.tabbed:
-      alternate_style: true
 
 nav:
   - Home: index.md
@@ -81,31 +65,31 @@ nav:
       
   - Architecture & Reference:
       - Core & Infrastructure:
-          - Dependency Injection: features/infrastructure/di.md
-          - Framework Engine: features/infrastructure/kernel.md
-          - Kernel Events: features/infrastructure/events.md
-          - ASGI Middlewares: features/infrastructure/middleware.md
-          - Application Entry: features/infrastructure/main.md
-          - Configuration Settings: features/infrastructure/config.md
-          - CLI Scaffolding Tool: features/infrastructure/cli.md
-          - System Utilities: features/infrastructure/utils.md
+          - Dependency Injection: features/infrastructure/di.md # Covers: IoCContainer, Scoped DI context, reflection cache, nested dependencies, Annotated, get_db
+          - Framework Engine: features/infrastructure/kernel.md # Covers: Plugin protocol, Central lifespan, dependency sort, missing dependency check
+          - Kernel Events: features/infrastructure/events.md # Covers: EventDispatcher, concurrent execution, try/except isolation
+          - ASGI Middlewares: features/infrastructure/middleware.md # Covers: RequestLogMiddleware, ScopedDependencyMiddleware, request correlation id
+          - Application Entry: features/infrastructure/main.md # Covers: main.py template, setup bootstrap
+          - Configuration Settings: features/infrastructure/config.md # Covers: Pydantic Settings, SettingsProxy, Lazy imports
+          - CLI Scaffolding Tool: features/infrastructure/cli.md # Covers: zc run, gensecret, startapp templating, path evaluation
+          - System Utilities: features/infrastructure/utils.md # Covers: slugify, json encoding fallback, validate_json_schema
       - Data & Transactions:
-          - Database Manager: features/database/db.md
-          - Repository Pattern: features/database/repository.md
-          - Business Services: features/database/service.md
-          - Unit of Work: features/database/uow.md
-          - Database Events: features/database/db-events.md
-          - Pagination Engine: features/database/pagination.md
-          - Dynamic Search Engine: features/database/search.md
+          - Database Manager: features/database/db.md # Covers: DatabaseManager, AsyncEngine, Connection pools, SQLite fallback
+          - Repository Pattern: features/database/repository.md # Covers: BaseRepository, Read/Write/Search Mixins, exist optimization, get_by_ids fast path
+          - Business Services: features/database/service.md # Covers: BaseService, safe commit context checks, post-read/write lifecycle hooks
+          - Unit of Work: features/database/uow.md # Covers: UnitOfWork transaction isolation, post-commit event queues
+          - Database Events: features/database/db-events.md # Covers: dispatch_db_event, error-isolated event propagation
+          - Pagination Engine: features/database/pagination.md # Covers: Cursor/Offset pagination, Cursor Keyset sorting, Base64 encoding, order_by(None) count
+          - Dynamic Search Engine: features/database/search.md # Covers: SearchEngine, JSON query builder, depth and max filters security, custom handlers, escaping wildcards
       - Security & Shielding:
-          - Thread-Safe Context: features/security/context.md
-          - Cryptographic Protocols: features/security/security.md
-          - API Routing Mechanics: features/security/api-router.md
-          - Zchema Security & Schema Pruning: features/security/zchema.md
-          - Centralized Exception Handler: features/security/exceptions.md
+          - Thread-Safe Context: features/security/context.md # Covers: contextvars, user and restricted fields, token reset/restoration safety
+          - Cryptographic Protocols: features/security/security.md # Covers: Argon2 parameters, symmetric/asymmetric JWT signing, token expiry
+          - API Routing Mechanics: features/security/api-router.md # Covers: ZCoreAPIRoute, response class preservation, vary header append logic, schema extraction
+          - Zchema Security & Schema Pruning: features/security/zchema.md # Covers: Zchema model_validator/serializer, Context-aware data masking, Schema pruning
+          - Centralized Exception Handler: features/security/exceptions.md # Covers: AppException hierarchy, app_exception_handler, standard API error envelope
       - Advanced Ecosystem:
-          - Distributed Caching: features/ecosystem/cache.md
-          - File Storage & Security: features/ecosystem/storage.md
-          - WebSocket Streaming: features/ecosystem/stream.md
+          - Distributed Caching: features/ecosystem/cache.md # Covers: BaseCache/TTLLRUCache fallback, Pydantic type validation on cache hits, eviction loop safety, weakref
+          - File Storage & Security: features/ecosystem/storage.md # Covers: LocalStorageProvider, MaxFileSize/SafeMimeType validators, Magic bytes validation, UUID truncation
+          - WebSocket Streaming: features/ecosystem/stream.md # Covers: StreamManager, Redis PubSub fallback, queue overflow protection, subscription context manager
           
   - Pocket Reference & Cheat Sheet: cheatsheet.md

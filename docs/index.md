@@ -1,89 +1,309 @@
-
-<p align="center">
-  <img src="./assets/banner.png" alt="ZCore Logo" >
-  <br>
-</p>
-
-# Welcome to ZCore
-
-ZCore is not a replacement for FastAPI; it is a modest and practical architectural layer built on top of it. While FastAPI provides the high-performance engine for handling HTTP requests, ZCore provides the "chassis"—a structured environment that solves common challenges in medium-to-large scale applications such as dependency management, transaction integrity, and data leakage prevention.
-
-The framework focuses on **Engineered Simplicity**. It abstracts complex patterns like the *Unit of Work* and *Scoped Inversion of Control* into intuitive interfaces, allowing you to focus on your domain logic while the framework ensures that your database transactions are atomic and your sensitive data remains restricted based on the execution context.
+<div style="display: flex; flex-direction: column; align-items: center; text-align: center; padding: 4rem 0;">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/banner.png" alt="ZCore Logo" style="max-width: 500px; width: 100%; margin-bottom: 2rem;">
+  <p style="font-size: 1.25rem; color: #a1a1aa; max-width: 700px; line-height: 1.625; margin-bottom: 2.5rem;">
+    A pragmatic and complementary architectural layer built on top of FastAPI. 
+    Standardize your structure, protect your data, and manage atomic transactions—without losing your development freedom.
+  </p>
+  <div style="display: flex; flex-wrap: wrap; gap: 1rem; margin-bottom: 2rem; justify-content: center; align-items: center;">
+    <a href="learn/installation/" style="padding: 0.875rem 2rem; border-radius: 0.375rem; background-color: #f4f4f5; color: #09090b; font-weight: bold; text-decoration: none; transition: all 0.2s; display: inline-block;">
+      Get Started
+    </a>
+    <a href="https://github.com/fastapi-zcore-framework/zcore" style="padding: 0.875rem 2rem; border-radius: 0.375rem; border: 1px solid #27272a; color: #a1a1aa; font-weight: bold; text-decoration: none; transition: all 0.2s; display: inline-block;" target="_blank">
+      GitHub Repository
+    </a>
+  </div>
+  <div style="padding: 0.875rem 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.375rem; font-family: monospace; font-size: 0.875rem; color: #d4d4d8;">
+    pip install fastapi-zcore-framework[all]
+  </div>
+</div>
 
 ---
 
-## Why Choose ZCore?
+## From Chaos to Structure
 
-ZCore was designed to bridge the gap between "writing an endpoint" and "building a maintainable system."
+FastAPI is highly performant but structureless, often leading to scattered database sessions, repetitive CRUD boilerplate, and complex dependency wiring in larger teams. 
 
-| Feature | Standard FastAPI Challenge | The ZCore Approach |
-| :--- | :--- | :--- |
-| **Dependency Injection** | Manual dependency registration and deeply nested `Depends` functions. | Automated **Scoped IoC** with constructor injection. |
-| **Data Security** | Manual filtering of Pydantic models for different users. | **3-Tier Schema Security** via `Zchema` (generation, input, response). |
-| **Transactions** | Scatterred `.commit()` calls leading to partial failures. | Centralized **Unit of Work** (UOW) for atomic operations. |
-| **Project Structure** | Inconsistent layouts across different teams. | Modular **Plugin System** and standardized CLI scaffolding. |
-| **Search & Filter** | Writing repetitive boilerplate for every query. | A secure, dynamic **Search Engine** with depth-limit protection. |
+ZCore acts as a structured chassis. See how ZCore streamlines standard web operations while keeping you fully in control:
+
+=== "ZCore (35 Lines — 7 Secure Endpoints)"
+
+        :::python
+        from zcore import BaseRouter, BaseService, BaseRepository, Base, Zchema
+        from sqlalchemy.orm import Mapped, mapped_column
+        import uuid
+
+        # 1. Define Model & Access Scopes (Auto-generates product:create, product:view, etc.)
+        class Product(Base):
+            __tablename__ = "products"
+            id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+            name: Mapped[str] = mapped_column()
+            price: Mapped[float] = mapped_column()
+            secret_cost: Mapped[float | None] = mapped_column() # Sensitive data
+
+        # 2. Context-Aware Schema (Auto-prunes 'secret_cost' in real-time if user lacks permission)
+        class ProductBase(Zchema):
+            __model__ = "products"
+            name: str
+            price: float
+            secret_cost: float | None = None
+
+        # 3. Standardize Layers & Scaffold Router (Generates 7 secure CRUD & Search endpoints)
+        class ProductRepository(BaseRepository[Product, ProductBase, ProductBase]):
+            def __init__(self, db: AsyncSession):
+                super().__init__(model=Product, db=db)
+
+        class ProductService(BaseService[Product, ProductBase, ProductBase]):
+            def __init__(self, repository: ProductRepository = Inject(ProductRepository)):
+                super().__init__(model=Product, repository=repository)
+
+        class ProductRouter(BaseRouter[ProductBase, ProductBase]):
+            model = Product
+            create_schema = ProductBase
+            update_schema = ProductBase
+            schema_out = ProductBase
+            service = ProductService
+            prefix = "/products"
+    
+
+=== "FastAPI (100+ Lines — Only 3 Basic Endpoints)"
+
+        :::python
+        # To replicate just a SUBSET of ZCore's security, transaction, and search features 
+        # in raw FastAPI, you must manually write massive repetitive boilerplate:
+
+        from fastapi import FastAPI, Depends, HTTPException, status
+        from pydantic import BaseModel
+        from sqlalchemy.ext.asyncio import AsyncSession
+        from sqlalchemy import select, func
+        import uuid
+
+        # 1. Define Base Model
+        class Product(Base):
+            __tablename__ = "products"
+            id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+            name: Mapped[str] = mapped_column()
+            price: Mapped[float] = mapped_column()
+            secret_cost: Mapped[float] = mapped_column()
+
+        # 2. Multiple Pydantic models needed to manually prevent data leakage for different roles
+        class ProductCreate(BaseModel):
+            name: str
+            price: float
+            secret_cost: float
+
+        class ProductOutPublic(BaseModel):
+            id: uuid.UUID
+            name: str
+            price: float
+
+        class ProductOutAdmin(BaseModel):
+            id: uuid.UUID
+            name: str
+            price: float
+            secret_cost: float
+
+        # 3. Manual Create Endpoint (With manual transaction rollback)
+        @app.post("/products", response_model=ProductOutAdmin)
+        async def create_product(
+            data: ProductCreate, 
+            db: AsyncSession = Depends(get_db),
+            user: User = Depends(get_current_user)
+        ):
+            if "product:create" not in user.scopes:
+                raise HTTPException(status_code=403, detail="Access denied")
+            
+            product = Product(**data.model_dump())
+            db.add(product)
+            try:
+                await db.commit() # Manual transaction commit
+                await db.refresh(product)
+            except Exception:
+                await db.rollback() # Manual transaction rollback on failure
+                raise HTTPException(status_code=400, detail="Transaction failed")
+            return product
+
+        # 4. Manual Get Endpoint (With manual role-based schema projection to prevent leaks)
+        @app.get("/products/{id}")
+        async def get_product(
+            id: uuid.UUID, 
+            db: AsyncSession = Depends(get_db),
+            user: User = Depends(get_current_user)
+        ):
+            result = await db.execute(select(Product).where(Product.id == id))
+            product = result.scalar_one_or_none()
+            if not product:
+                raise HTTPException(status_code=404, detail="Product not found")
+            
+            # Manual permission-based data pruning
+            if "product:view_sensitive" in user.scopes:
+                return ProductOutAdmin.model_validate(product)
+            return ProductOutPublic.model_validate(product)
+
+        # 5. Manual List Endpoint (With manual offset calculations and count queries)
+        @app.get("/products")
+        async def list_products(
+            page: int = 1, 
+            size: int = 20, 
+            db: AsyncSession = Depends(get_db)
+        ):
+            offset = (page - 1) * size
+            count_query = select(func.count()).select_from(Product)
+            total = (await db.execute(count_query)).scalar_one()
+            
+            items_query = select(Product).offset(offset).limit(size)
+            items = (await db.execute(items_query)).scalars().all()
+            
+            return {
+                "data": [ProductOutPublic.model_validate(i) for i in items],
+                "meta": {"total": total, "page": page, "size": size}
+            }
+
+---
+
+## Instant Frontend Integration
+
+One of ZCore's standout features is its native schema projection. By enabling a single flag on your router, you can instantly render dynamic forms on the frontend.
+
+Adding `?schema=true` to any scaffolded POST, PUT, or PATCH endpoint returns the raw, validated JSON-Schema of that endpoint:
+
+```bash
+GET /products?schema=true
+```
+
+```json
+{
+  "success": true,
+  "message": "Schema generated successfully",
+  "data": {
+    "title": "ProductBase",
+    "type": "object",
+    "properties": {
+      "name": { "type": "string" },
+      "price": { "type": "number" }
+    },
+    "required": ["name", "price"]
+  },
+  "meta": {
+    "restricted_fields": []
+  }
+}
+```
+
+!!! info "Security Isolation"
+    If the active user does not have permission to view or edit specific fields, ZCore automatically prunes those fields from the returned JSON-Schema in real-time.
 
 ---
 
 ## The Request Lifecycle
 
-Understanding how a request travels through ZCore is key to mastering its architecture. The following diagram illustrates the automated orchestration from the moment a request hits the server to the final pruned response.
+ZCore coordinates your web, context, database, and transaction layers into a single, predictable journey.
 
 ```mermaid
-sequenceDiagram
-    participant C as Client
-    participant M as Middlewares
-    participant R as ZCoreAPIRoute
-    participant S as Service & UOW
-    participant D as Database
-    participant P as Zchema Security Layer
+flowchart TB
+    A(["📥 HTTP Request"]) --> B("RequestLog<br>Scoped Session")
+    B --> C("Context Isolation<br>User + Restricted Fields")
+    C --> D("BaseRouter<br>Auth Guards")
+    D --> E("BaseService<br>Hooks")
+    E --> F("BaseRepository<br>SearchEngine")
+    F --> G("Unit of Work<br>Atomic Commit")
+    G --> H(["📤 HTTP Response"])
 
-    C->>M: HTTP Request
-    Note over M: Generate Correlation ID<br/>Initialize Scoped DI
-    M->>R: Route Handled
-    Note over R: Schema Analysis<br/>Restricted Field Lookup
-    R->>S: Invoke Business Logic
-    S->>D: DB Operations (via Repository)
-    Note over S: Atomic Commit via Unit of Work
-    D-->>S: Record Persisted
-    S-->>R: Return Domain Model
-    R->>P: Native Zchema Serialization
-    Note over P: Prune Restricted Fields<br/>(e.g., user.email, employee.salary)
-    P-->>R: Pruned Data (via model_serializer hook)
-    R-->>C: JSON Response (Pruned)
+     A:::edge
+     B:::node
+     C:::node
+     D:::node
+     E:::node
+     F:::node
+     G:::node
+     H:::edge
+    classDef node fill:#064e3b,stroke:#10b981,stroke-width:2px,color:#f8fafc,font-family:system-ui
+    classDef edge fill:#064e3b,stroke:#10b981,stroke-width:3px,color:#f8fafc,font-weight:bold,font-family:system-ui
+    style A fill:#228369
+    style B fill:#228369
+    style C fill:#228369
+    style D fill:#228369
+    style E fill:#228369
+    style F fill:#228369
+    style G fill:#228369
+    style H fill:#228369
 ```
 
-💡 **Note:** `ZCoreAPIRoute` acts as a smart gateway, automatically intercepting requests and responses to handle schema inspection and dynamic field pruning — all delegated to the `Zchema` base class's native Pydantic V2 hooks.
+---
+
+## Six Architectural Pillars
+
+ZCore packages essential enterprise-grade patterns into optional, lightweight modules. 
+
+<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; margin: 3rem 0;">
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">🛡️</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Context Shielding (Zchema)</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      Write a single schema model. ZCore dynamically prunes input fields (preventing mass assignment) and output fields (preventing data leakage) based on active user context.
+    </p>
+  </div>
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">🔗</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Atomic Transactions (UOW)</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      Group multiple operations into a single Unit of Work. Domain events are queued and only dispatched after the database transaction commits successfully.
+    </p>
+  </div>
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">🔍</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Dynamic Search Engine</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      A secure query builder that translates nested JSON filters, sorting, and eager-loading into safe SQL queries with depth-limit protection against DoS.
+    </p>
+  </div>
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">🏗️</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Scoped DI Container</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      Clean constructor-based dependency injection. Registers singletons, transients, and request-scoped dependencies that are auto-cleaned per request.
+    </p>
+  </div>
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">🚀</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Progressive Routing</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      Scaffold 7 CRUD and search endpoints in seconds, or bypass the router completely to write standard, raw FastAPI functional endpoints.
+    </p>
+  </div>
+
+  <div class="zcore-card" style="padding: 1.5rem; background-color: #18181b; border: 1px solid #27272a; border-radius: 0.5rem; display: flex; flex-direction: column; justify-content: flex-start;">
+    <div style="font-size: 1.75rem; margin-bottom: 0.75rem;">📦</div>
+    <h3 style="color: #f4f4f5; font-weight: 600; margin: 0 0 0.5rem 0; font-size: 1.1rem;">Topological Plugins</h3>
+    <p style="font-size: 0.875rem; color: #a1a1aa; line-height: 1.6; margin: 0;">
+      Structure your codebase into clean modules. The central kernel automatically sorts and loads plugins based on their declared dependencies.
+    </p>
+  </div>
+
+</div>
 
 ---
 
-## Core Pillars at a Glance
+## Built for Absolute Freedom
 
-*   **⚡ Scoped IoC Container:** Manage object lifecycles (Singleton, Transient, or Scoped) with ease. Scoped dependencies are automatically cleared at the end of every HTTP request to prevent memory pollution.
-*   **🛡️ Secure Search Engine:** A dynamic query builder that supports nested filters and eager-loading, while automatically blocking access to restricted database columns based on security policies.
-*   **🔗 Unit of Work (UOW):** Ensures that business operations succeed or fail as a single unit. It coordinates database flushes and delays event dispatching until the transaction is successfully committed.
-*   **🏗️ Modular Plugin System:** Organize your application into decoupled domains. Each plugin manages its own lifecycle hooks (`on_startup`, `on_shutdown`) and can declare dependencies on other plugins.
+Is ZCore another rigid framework like Django? **No.**
 
----
+We believe in **progressive disclosure**. You only use what you need, when you need it. If a specific business route requires raw, custom logic, bypass the scaffolding router entirely while still using ZCore's decoupled background layers:
 
-## Where to Start?
+```python
+# Bypass the scaffolding BaseRouter and write standard, functional FastAPI
+@app.post("/custom-checkout")
+async def checkout(
+    data: CheckoutRequest,
+    checkout_service: CheckoutService = Inject(CheckoutService) # Still uses Scoped DI
+):
+    # Execute transactional business logic
+    return await checkout_service.process_order(data)
+```
 
-Choose the path that best fits your current needs:
-
-!!! info "🚀 Quick Start"
-    New to ZCore? Learn how to initialize your first project and create a modular app using our CLI tool in under 5 minutes.
-    [View Quick Start Guide](learn/overview.md)
-
-!!! tip "🧠 Architectural Deep Dive"
-    Want to understand the "Under the Hood" mechanics? Explore our detailed documentation on Scoped DI, UOW, and the Kernel.
-    [Explore Core Concepts](features/infrastructure/di/)
-
-!!! warning "📜 Cheat Sheet"
-    Already familiar with ZCore? Use our quick reference for syntax, CLI commands, and standard repository methods.
-    [Open Cheat Sheet](cheatsheet.md)
-
----
-<p align="center">
-    <small>ZCore is licensed under the Apache License 2.0. Built with ☕ and architectural rigor.</small>
-</p>
+!!! success "Next Steps"
+    Ready to experience clean FastAPI architecture? Proceed to the [Installation & Scaffolding](learn/installation/) guide to create your first ZCore app in seconds.
