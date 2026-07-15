@@ -129,7 +129,7 @@ from pydantic import ConfigDict
 import uuid
 
 class {ModelName}Base(Zchema):
-    __db_name__ = "{table_name}"
+    __model__ = "{table_name}"
     # TODO: Add your shared model attributes
     pass
 
