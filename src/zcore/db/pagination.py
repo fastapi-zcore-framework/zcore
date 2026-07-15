@@ -10,7 +10,7 @@ import uuid
 import math
 import base64
 from typing import Any, Sequence, TypeVar, Generic, Optional, Type, Literal
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel, Field
 
 from sqlalchemy.sql.sqltypes import DateTime
@@ -224,6 +224,10 @@ class CursorPagination(BasePagination[T]):
         """
         value = getattr(last_item, self.cursor_field, None)
         if isinstance(value, datetime):
+            if value.tzinfo is None:
+                value = value.replace(tzinfo=timezone.utc)
+            else:
+                value = value.astimezone(timezone.utc)
             value = value.isoformat()
             
         payload = {
