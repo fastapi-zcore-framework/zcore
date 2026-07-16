@@ -14,17 +14,17 @@ from zcore.context.context import get_restricted_fields
 class Zchema(BaseModel):
     """Unified, domain-aware security schema base class.
 
-    Subclasses specify their unique database domain mapping via the `__db_name__` 
+    Subclasses specify their unique database domain mapping via the `__model__` 
     class attribute. This enables contextual, recursive pruning across schema generation, 
     input validation, and response serialization.
     """
 
-    __db_name__: ClassVar[Optional[str]] = None
+    __model__: ClassVar[Optional[str]] = None
 
     @classmethod
     def _get_relative_restricted_paths(cls) -> Set[str]:
         """Extract and normalize restricted field paths mapped to this schema's domain."""
-        db_name = getattr(cls, "__db_name__", None)
+        db_name = getattr(cls, "__model__", None)
         if not db_name:
             return set()
 
