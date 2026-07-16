@@ -14,31 +14,28 @@ from zcore.context.context import get_restricted_fields
 class Zchema(BaseModel):
     """Unified, domain-aware security schema base class.
 
-    Subclasses specify their unique database domain mapping via the `__db_name__` 
+    Subclasses specify their unique database domain mapping via the `__model__` 
     class attribute. This enables contextual, recursive pruning across schema generation, 
     input validation, and response serialization.
     """
 
-    __db_name__: ClassVar[Optional[str]] = None
+    __model__: ClassVar[Optional[str]] = None
 
     @classmethod
     def _get_relative_restricted_paths(cls) -> Set[str]:
         """Extract and normalize restricted field paths mapped to this schema's domain."""
-        db_name = getattr(cls, "__db_name__", None)
-        if not db_name:
+        model_name = getattr(cls, "__model__", None)
+        if not model_name:
             return set()
 
-        prefix = f"{db_name}."
+        prefix = f"{model_name}."
         restricted = get_restricted_fields()
         relative_paths = set()
         
         for path in restricted:
-            # Remove common resource prefix for robust backwards compatibility
-            normalized = path.replace("resource.", "")
-            if normalized.startswith(prefix):
-                relative_paths.add(normalized[len(prefix):])
-            elif normalized == db_name:
-                # If the entire domain is restricted, restrict all attributes
+            if path.startswith(prefix):
+                relative_paths.add(path[len(prefix):])
+            elif path == model_name:
                 relative_paths.add("*")
         return relative_paths
 
@@ -80,7 +77,7 @@ class Zchema(BaseModel):
     def __get_pydantic_json_schema__(
         cls, core_schema: Any, handler: Any
     ) -> dict[str, Any]:
-        """Level 1: Customize dynamic JSON schema generation under context boundaries."""
+        """Customize dynamic JSON schema generation under context boundaries."""
         json_schema = handler(core_schema)
         relative_paths = cls._get_relative_restricted_paths()
         if not relative_paths:
@@ -121,7 +118,7 @@ class Zchema(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def filter_restricted_inputs(cls, data: Any) -> Any:
-        """Level 2: Silently strip restricted fields from input payloads to prevent Mass Assignment."""
+        """Silently strip restricted fields from input payloads to prevent Mass Assignment."""
         relative_paths = cls._get_relative_restricted_paths()
         if not relative_paths or data is None:
             return data
@@ -133,7 +130,7 @@ class Zchema(BaseModel):
 
     @model_serializer(mode="wrap")
     def secure_serializer(self, handler: Any) -> Any:
-        """Level 3: Securely intercept serialization to prune restricted attributes from response."""
+        """Securely intercept serialization to prune restricted attributes from response."""
         serialized = handler(self)
         relative_paths = self._get_relative_restricted_paths()
         if not relative_paths or serialized is None:

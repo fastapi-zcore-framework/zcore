@@ -1,103 +1,97 @@
-# 🛡️ Cryptographic Protocols & Security
+# Cryptographic Foundations
 
-ZCore takes a modest and practical approach to security. It comes equipped with industry-standard protocols for password protection and identity management, ensuring your application follows modern safety guidelines without requiring complex manual configuration.
-
----
-
-## 🔒 Argon2id Password Hashing
-
-For password security, ZCore utilizes **Argon2id**. This is currently considered a modern standard because it is specifically designed to be resistant to both brute-force attacks and highly specialized GPU-based cracking.
-
-### ⚙️ Default Security Parameters
-The Argon2 engine is pre-configured with high-security defaults. These values ensure a strong defense while remaining efficient for modern server hardware:
-
-| Parameter | Default Value | Purpose |
-| :--- | :--- | :--- |
-| **Memory Cost** | `65536` (64 MB) | Forces the attacker to use significant RAM for each guess. |
-| **Time Cost** | `3` Iterations | Determines the number of passes over the memory. |
-| **Parallelism** | `4` Threads | Utilizes multi-core processing for hashing. |
-
-### 🛡️ Side-Channel Protection
-To prevent "Timing Attacks" (where an attacker guesses a password by measuring how long the server takes to respond), ZCore's verification function always returns a boolean outcome safely. It swallows internal cryptographic errors to ensure the execution time remains consistent.
-
-```python
-# Internal safety logic
-try:
-    return ph.verify(hashed_password, plain_password)
-except (VerifyMismatchError, InvalidHashError):
-    return False # Consistent failure response
-```
+Secure user credentials with Argon2id and orchestrate identity via hardened, protocol-agnostic JWT signaling.
 
 ---
 
-## 🔑 JSON Web Tokens (JWT)
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Security Infrastructure</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Core</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Argon2id / PyJWT</strong>
+  </div>
+</div>
 
-ZCore provides a modest wrapper for managing JWTs, supporting two primary modes of operation depending on your infrastructure needs:
+## The Challenge
+Implementing robust security in FastAPI often suffers from "Infrastructure Drift":
+1.  **Stale Hashing:** Many projects still use BCrypt or PBKDF2, which are increasingly vulnerable to GPU-accelerated side-channel attacks.
+2.  **Secret Mismanagement:** Hardcoding secrets or failing to rotate them, often running production apps with default "example" keys.
+3.  **Rigid Token Logic:** Difficulty switching from Symmetric (HS256) to Asymmetric (RS256) signing as the architecture moves toward microservices or OIDC.
+4.  **Implicit Expiry:** Manual timestamp math for `exp` claims that lead to timezone bugs or permanent tokens.
 
-1.  **Symmetric (HMAC):** A simple approach using a shared `SECRET_KEY`. Ideal for smaller, single-service applications.
-2.  **Asymmetric (RSA/ECDSA):** A more advanced approach using a Private/Public key pair. This allows other services to verify tokens using your public key without knowing your private signing key.
+## The ZCore Elegance
+ZCore provides a hardened security chassis. It defaults to **Argon2id** (the winner of the Password Hashing Competition) with configurable memory costs. The JWT engine is "Signature-Aware," automatically detecting whether to use Symmetric or Asymmetric keys based on your configuration, while enforcing a mandatory "Production Secret Guard" that prevents unsafe deployments.
 
----
+=== "ZCore Hardened Security"
+      :::python
+      from zcore.security import get_password_hash, create_token, verify_password
 
-## 🚨 The Production "Safety Shield"
+      # 1. High-Entropy Hashing (Argon2id)
+      hashed = get_password_hash("user_password")
+      is_valid = verify_password("user_password", hashed)
 
-A common engineering mistake is accidentally deploying an application to production with a default "test" secret key. ZCore implements a **Fatal Startup Guard** to prevent this.
+      # 2. Protocol-Agnostic Token Creation
+      # Automatically uses RSA/ECDSA if keys are configured
+      token = create_token(data={"sub": str(user.id), "scopes": ["admin"]})
 
-If the framework detects it is running in a `production` environment while still using the insecure default key, it will immediately abort the startup sequence.
+=== "FastAPI Manual Security"
+        :::python
+        # Requires manual configuration of Passlib and PyJWT
+        from passlib.context import CryptContext
+        import jwt
 
-```mermaid
-graph TD
-    Start[App Bootstrapping] --> EnvCheck{Is Environment 'Production'?}
-    EnvCheck -->|No| Run[Continue Startup]
-    EnvCheck -->|Yes| KeyCheck{Is SECRET_KEY default?}
-    KeyCheck -->|No| Run
-    KeyCheck -->|Yes| Abort[🚨 FATAL SECURITY VIOLATION: Abort Startup]
-```
-
----
-
-## 💻 Practical Usage
-
-### 1. Handling Passwords
-We suggest hashing passwords at the point of registration and verifying them only during the login phase.
-
-```python
-from zcore.security import get_password_hash, verify_password
-
-# 📝 During User Registration:
-hashed_pw = get_password_hash("user-password-123")
-
-# 🔍 During User Login:
-if verify_password("user-password-123", hashed_pw):
-    print("✅ Access Granted")
-```
-
-### 2. Issuing Tokens
-Tokens can carry custom "Claims" (data) such as the user ID or specific permission scopes.
-
-```python
-from zcore.security import create_token, decode_token
-
-# 📤 Create a token (Default expiry: 30 minutes)
-token = create_token(data={"sub": "user_id_123", "role": "admin"})
-
-# 📥 Decode and validate a token
-try:
-    payload = decode_token(token)
-    user_id = payload.get("sub")
-except AuthError as e:
-    print(f"❌ Validation failed: {e.message}")
-```
+        pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+        
+        def create_token(data: dict):
+            to_encode = data.copy()
+            # Manual expiry math
+            expire = datetime.utcnow() + timedelta(minutes=30)
+            to_encode.update({"exp": expire})
+            # Manual algorithm and key management
+            return jwt.encode(to_encode, SECRET_KEY, algorithm="HS256")
 
 ---
 
-## 💡 Engineering Insights
+## The Token Lifecycle
 
-!!! tip "💡 Why Argon2id?"
-    Unlike older algorithms (like MD5 or SHA1), Argon2id is "memory-hard." This makes it extremely expensive for attackers to build specialized hardware to crack your users' passwords.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/security.png" 
+  alt="The Token Lifecycle" width="700">
+</p>
 
-!!! info "🛡️ Token Expiration"
-    ZCore's `decode_token` automatically checks the `exp` (expiration) claim. If the token is even one second past its limit, it will raise an `AuthError`. You don't need to manually check timestamps.
 
-!!! warning "🔑 Asymmetric Setup"
-    To use Asymmetric signing, you must provide `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` in your settings. If these are missing, ZCore gracefully falls back to Symmetric (HMAC) signing using your `SECRET_KEY`.
+---
+
+## Boundaries & Integration
+ZCore manages the cryptographic "heavy lifting" while remaining compatible with standard identity providers.
+
+*   **OAuth2 Integration:** ZCore's `create_token` output is a standard JWT string, fully compatible with FastAPI's `OAuth2PasswordBearer` and `Security` scopes.
+*   **User Independence:** The security utilities do not require a Database connection. You can use them to secure machine-to-machine (M2M) communication or external microservices.
+*   **Bypass:** If your organization requires a different hashing algorithm (e.g., Scrypt), you can ignore the `hashing.py` utility. ZCore's higher-level components do not force a specific hash format on your `User` model.
+
+---
+
+## Under-the-Hood Spec
+
+### 1. The Production Secret Guard
+To prevent critical security oversights, ZCore’s JWT key resolver (`_get_signing_keys`) includes a fatal check [security/jwt.py]. If `ENVIRONMENT` is "production" and `SECRET_KEY` is set to the framework's insecure default value, the system raises a `RuntimeError` and **aborts application startup**. 
+
+### 2. Argon2id Configuration
+ZCore initializes the `PasswordHasher` with parameters optimized for modern server hardware [security/hashing.py]:
+- **Memory Cost:** 64 MB (`65536`)
+- **Time Cost:** 3 Iterations
+- **Parallelism:** 4 Threads
+These parameters ensure high resistance to specialized hardware (ASIC/GPU) cracking while maintaining sub-100ms verification times for users.
+
+### 3. Dynamic Asymmetric Detection
+The JWT utility is designed for scale [security/jwt.py]. If `JWT_PRIVATE_KEY` and `JWT_PUBLIC_KEY` are detected in the settings, the engine automatically switches to Asymmetric signing (e.g., `RS256`). This allows the framework to sign tokens in the Auth service that can be verified by downstream services using only the Public Key, without sharing the master secret.
+
+!!! danger "Security Warning"
+    Never store your `SECRET_KEY` or `JWT_PRIVATE_KEY` in version control. Always use environment variables or a secure secret manager (like Vault or AWS Secrets Manager) in production.

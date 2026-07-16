@@ -59,7 +59,7 @@ class CustomJSONEncoder(json.JSONEncoder):
         if isinstance(obj, (datetime, date, time)):
             return obj.isoformat()
         if isinstance(obj, Decimal):
-            return float(obj)
+            return str(obj)
         try:
             return super().default(obj)
         except TypeError:

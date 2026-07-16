@@ -1,154 +1,115 @@
-# 🛡️ Unified Schema Pruning & Security (`Zchema`)
+# Zchema Security & Schema Pruning
 
-ZCore provides a modest but powerful security layer that lives directly inside your Pydantic schemas. Instead of relying on web-layer middlewares or a separate `ResponseProjector` to prune data after rendering, ZCore introduces the `Zchema` base class — a drop-in replacement for Pydantic's `BaseModel` that automatically secures your data at three distinct tiers.
-
----
-
-## 🧱 The `Zchema` Base Class
-
-`Zchema` extends Pydantic V2's native hooks to inject security directly into the schema lifecycle. Every schema you define should inherit from `Zchema` instead of `BaseModel`:
-
-```python
-from zcore import Zchema
-
-class UserBase(Zchema):
-    __db_name__ = "user"
-    email: str
-    salary: float
-```
-
-### 🏷️ The `__db_name__` Attribute
-
-The `__db_name__` class attribute binds the schema to a specific database domain. This is the foundation of ZCore's domain-isolated security model:
-
-*   **Namespace Isolation:** Restricted fields are defined as `{db_name}.{field}` (e.g., `user.email`, `order.total`), preventing collisions between modules.
-*   **Scoped Resolution:** The security layer uses `__db_name__` to determine which restricted paths apply to which schema, ignoring fields from unrelated domains.
-*   **Backward Compatibility:** The old `resource.` prefix syntax is still supported as a fallback, but the new `{db_name}.` syntax is the recommended approach.
+Unify input validation, response serialization, and dynamic JSON-Schema generation into a single domain-aware base class that silently enforces data-masking policies.
 
 ---
 
-## 🔐 Three-Tier Security Model
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Schema Security Layer</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Security Core</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Pydantic V2 / contextvars</strong>
+  </div>
+</div>
 
-`Zchema` automatically protects your data across three independent tiers, all without any web-layer middleware configuration:
+## The Challenge
 
-```mermaid
-graph BT
-    subgraph Tier_1[🔍 Tier 1: Dynamic Schema Generation]
-        A1[Client Request: ?schema=true] --> B1[__get_pydantic_json_schema__]
-        B1 --> C1[Resolve __db_name__ context]
-        C1 --> D1[Prune restricted fields from JSON Schema]
-        D1 --> E1[Return pruned schema to client]
-    end
+In a typical FastAPI application, security schema management suffers from three distinct failure modes:
 
-    subgraph Tier_2[📥 Tier 2: Input Validation]
-        A2[Malicious Payload with restricted fields] --> B2[model_validator filter_restricted_inputs]
-        B2 --> C2[Silently strip unauthorized fields]
-        C2 --> D2[Pass clean payload to business logic]
-    end
+1.  **Schema Fragmentation:** To prevent data leakage, developers define multiple Pydantic models per entity (e.g., `ProductCreate`, `ProductOutPublic`, `ProductOutAdmin`, `ProductUpdate`). A single new restricted field must be added to every variant, leading to copy-paste errors.
+2.  **Mass Assignment Vulnerabilities:** Input schemas that accept all model fields allow a malicious user to send unexpected fields (e.g., `is_admin=true`) that get written directly to the database.
+3.  **Context-Blind Serialization:** Response serialization is static. A service returns the same fields regardless of who is making the request, forcing every endpoint to manually check permissions before building the response.
 
-    subgraph Tier_3[📤 Tier 3: Response Pruning]
-        A3[Outgoing serialized data] --> B3[model_serializer secure_serializer]
-        B3 --> C3[Strip restricted fields recursively]
-        C3 --> D3[Return sanitized JSON to client]
-    end
-```
+## The ZCore Elegance
 
-### 🔍 Tier 1: Dynamic Schema Generation
+`Zchema` is a drop-in replacement for `pydantic.BaseModel` that is domain-aware and context-sensitive. You define a single schema per entity, annotate it with `__model__` to declare its database domain, and Zchema automatically prunes restricted fields during validation, serialization, and JSON-Schema generation—all based on the active thread-safe context.
 
-When a client appends `?schema=true` to an endpoint URL, ZCore dynamically generates the JSON Schema for the target model. The `Zchema.__get_pydantic_json_schema__` hook intercepts this process and removes any properties that match the active context's restricted fields, ensuring that even the schema metadata doesn't leak information about hidden fields.
+=== "ZCore Unified Zchema"
+        :::python
+        from zcore.web.projection import Zchema
 
-### 📥 Tier 2: Input Validation (Mass Assignment Prevention)
+        class ProductBase(Zchema):
+            __model__ = "products"          # Domain binding
+            name: str
+            price: float
+            secret_cost: float | None = None  # Restricted when context says so
 
-A malicious user could try to send restricted fields (e.g., `is_admin: true`) in a POST or PUT request body. The `model_validator` (`filter_restricted_inputs`) silently strips these fields before they ever reach your service layer, effectively preventing Mass Assignment attacks without any additional code.
+        # Inside a request where "products.secret_cost" is restricted:
+        schema = ProductBase(name="X", price=10, secret_cost=100)
+        # schema.model_dump() → {"name": "X", "price": 10}  (secret_cost pruned)
 
-### 📤 Tier 3: Response Pruning
+        # GET /products?schema=true returns JSON-Schema WITHOUT secret_cost
 
-During serialization, the `model_serializer` (`secure_serializer`) intercepts the output and recursively removes any keys that match the active context's restricted fields. Unlike the old `ResponseProjector` approach — which operated on raw JSON after rendering — this happens **natively within the model**, making it compatible with any serialization pipeline.
+=== "Standard Pydantic Multi-Model"
+        :::python
+        from pydantic import BaseModel
 
----
+        class ProductCreate(BaseModel):
+            name: str
+            price: float
+            secret_cost: float | None = None
 
-## 💻 Practical Usage
+        class ProductOut(BaseModel):
+            name: str
+            price: float
+            # secret_cost is missing—but so is any admin-only field
 
-### Defining Schemas with Domain Binding
-
-```python
-from zcore import Zchema
-from pydantic import Field, ConfigDict
-import uuid
-
-class EmployeeResponse(Zchema):
-    __db_name__ = "employee"
-    id: uuid.UUID
-    name: str
-    salary: float            # Will be pruned for non-admin users
-    bank_account_number: str # Will be pruned for non-admin users
-
-    model_config = ConfigDict(from_attributes=True)
-```
-
-### Setting Restricted Fields in Context
-
-Restricted fields are defined using the `{db_name}.{field}` syntax and bound to the request context via middleware or a dependency:
-
-```python
-from zcore.context import set_restricted_fields
-
-# In a security dependency or middleware:
-set_restricted_fields({"employee.salary", "employee.bank_account_number"})
-```
-
-ZCore will automatically resolve these paths against the `__db_name__` of any schema being serialized. If the domain matches, the corresponding fields are pruned across all three security tiers.
+        # Must maintain N models per entity
+        # Each new field requires updates across ALL variants
+        # No automatic context-driven pruning
 
 ---
 
-## 📦 Standardized Response Envelope (`ResponseWrapper`)
+## The Pruning Pipeline
 
-The `ResponseWrapper` class itself inherits from `Zchema`, meaning it also participates in the security pruning pipeline:
-
-```python
-from zcore.web.response import ResponseWrapper
-
-@app.get("/custom-stats")
-async def get_stats():
-    stats_data = {"active_users": 150, "uptime": "99.9%"}
-    
-    # Manually wrap your data in a standardized success response
-    return ResponseWrapper.success_response(
-        data=stats_data, 
-        message="System statistics retrieved successfully"
-    )
-```
-
-### 📝 Example Response Structure
-
-```json
-{
-  "success": true,
-  "message": "Operation completed successfully",
-  "data": {
-    "id": "e4c02f06-d71d-4876-88b0-a3e390c58a62",
-    "name": "Heavy Duty Widget",
-    "price": 249.99
-  },
-  "meta": {
-    "execution_time_ms": 12.4
-  }
-}
-```
-
-### 💉 Pydantic Generic Support
-
-The `ResponseWrapper` uses Pydantic **Generics**. This means your API documentation (Swagger/OpenAPI) remains perfectly type-safe. If your endpoint returns a `Product`, the documentation will show `ResponseWrapper[Product]`, making it clear what the `data` field contains.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/zchema.png" 
+  alt="The Pruning Pipeline" width="700">
+</p>
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
 
-!!! tip "💡 Why `Zchema` Instead of `ResponseProjector`?"
-    The old `ResponseProjector` operated on raw JSON after rendering, which required a custom `ZCoreJSONResponse` class and introduced an extra deserialization/reserialization cycle. `Zchema` integrates security directly into Pydantic's native hooks — the pruning happens once, at the model level, without any web-layer middleware.
+Zchema is the backbone of ZCore's data-masking strategy and integrates seamlessly with the broader ecosystem.
 
-!!! info "🛡️ Domain Boundary Isolation"
-    Because `__db_name__` ties each schema to a specific domain (e.g., `"user"`, `"product"`, `"order"`), there is zero risk of field name collisions between modules. A restricted path like `user.email` will never accidentally prune the `email` field from the `Product` schema.
+*   **ResponseWrapper Inheritance:** `ResponseWrapper` inherits from `Zchema`, meaning all API responses automatically benefit from context-driven serialization pruning.
+*   **BaseRouter Schema Resolution:** The `BaseRouter` uses `create_schema`, `update_schema`, and `schema_out`—all expected to be `Zchema` subclasses. The router's `ZCoreAPIRoute` invokes `model_json_schema()` on these classes, which triggers the customized schema generation path.
+*   **Context Decoupling:** Zchema never directly inspects HTTP headers or tokens. It reads restricted field paths from the thread-safe context (`get_restricted_fields()`), which is populated by upstream middleware or authentication logic.
 
-!!! note "🧠 Handling Empty Data"
-    If an endpoint returns `None` (for example, after a successful deletion), the `ResponseWrapper` will still return a success status with `data: null`. This consistency ensures that frontend JSON parsers don't crash when expecting a specific structure.
+---
+
+## Under-the-Hood Spec
+
+### 1. Domain Mapping via `__model__`
+
+Each Zchema subclass declares a `__model__` class variable matching its database table or domain name (e.g., `"products"`) [web/projection.py]. When the context holds a restricted path like `"products.secret_cost"`, `_get_relative_restricted_paths` strips the domain prefix and returns `{"secret_cost"}`. A wildcard path `"products"` maps to `{"*"}`, which clears the entire payload.
+
+### 2. Input Pruning via `model_validator(mode="before")`
+
+The `filter_restricted_inputs` validator executes before any Pydantic field validation [web/projection.py]. It makes a shallow copy of the input dictionary and calls `_prune_data` to remove any keys whose dotted paths match the restricted set. This prevents mass assignment attacks where a user injects privileged fields into a create or update payload.
+
+### 3. Output Pruning via `model_serializer(mode="wrap")`
+
+The `secure_serializer` wraps the default serialization handler [web/projection.py]. After Pydantic produces the standard dictionary, the method applies the same pruning logic to strip restricted fields from the serialized output before returning the response.
+
+### 4. Schema Pruning via `__get_pydantic_json_schema__`
+
+Zchema overrides Pydantic V2's JSON-Schema generation hook [web/projection.py]. It calls the standard handler to produce the full schema, then recursively walks the `properties` and `required` lists to remove any fields that are restricted for the current context. This ensures that frontend forms generated from `?schema=true` never include fields the user cannot see or edit.
+
+### 5. Recursive Nested Pruning
+
+The `_prune_data` helper handles nested structures [web/projection.py]. For a restriction like `"orders.items.price"`, it descends into `data["orders"]["items"]` and prunes the `price` key from each dictionary or list element. This enables field-level masking across complex, deeply nested Pydantic models.
+
+!!! info "Performance Note"
+    Zchema restricts input and output fields by value-copying the data dictionary before pruning. This ensures the original model instance is never mutated, preserving data integrity for downstream operations that may bypass the serializer.
+
+!!! danger "Security Note"
+    Because pruning happens at the Pydantic layer, it applies universally—including in background tasks, CLI commands, or any code path that uses `model_dump()` on a Zchema instance while a restricted context is active. Always reset the context when spawning isolated work.

@@ -129,7 +129,7 @@ from pydantic import ConfigDict
 import uuid
 
 class {ModelName}Base(Zchema):
-    __db_name__ = "{table_name}"
+    __model__ = "{table_name}"
     # TODO: Add your shared model attributes
     pass
 
@@ -167,8 +167,8 @@ class {ModelName}Service(BaseService[{ModelName}, {ModelName}Create, {ModelName}
 """
 
 ROUTER_TEMPLATE = """from typing import Any
-from zcore import BaseRouter
-from zcore.web import RouteKey
+from zcore import BaseRouter, RouteKey
+
 from .schemas import {ModelName}Create, {ModelName}Update, {ModelName}Response
 from .services import {ModelName}Service
 from .models import {ModelName}
@@ -202,7 +202,7 @@ router_instance = {ModelName}Router()
 """
 
 PLUGIN_TEMPLATE = """from fastapi import FastAPI
-from zcore.kernel import Plugin
+from zcore import Plugin
 
 class {ModelName}Plugin(Plugin):
     name = "{app_name}"

@@ -1,7 +1,7 @@
 import datetime
 from decimal import Decimal
 import uuid
-from typing import Any, Type
+from typing import Any
 import pytest
 
 from zcore.exceptions.base import ValidationError
@@ -29,11 +29,11 @@ from zcore.utils.validators import validate_json_schema
         ),
         (
             Decimal("123.45"),
-            "123.45"
+            '"123.45"'
         ),
         (
             {"user_id": uuid.UUID("12345678-1234-5678-1234-567812345678"), "balance": Decimal("9.99")},
-            '{"user_id": "12345678-1234-5678-1234-567812345678", "balance": 9.99}'
+            '{"user_id": "12345678-1234-5678-1234-567812345678", "balance": "9.99"}'
         )
     ]
 )

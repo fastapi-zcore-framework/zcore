@@ -1,102 +1,96 @@
-# 🔗 Unit of Work (UOW) Pattern
+# Unit of Work (Atomic Transactions)
 
-The Unit of Work (UOW) pattern is a practical way to coordinate multiple database changes and manage system-wide events. It ensures that complex operations involving several services or repositories succeed or fail as a single, atomic unit, while preventing "partial saves" that could corrupt your data.
-
----
-
-## 📐 Transactional Lifecycle Flow
-
-The `UnitOfWork` class manages the database session and maintains a modest internal queue (`_pending_events`). This queue buffers domain events (like sending a "Welcome Email") so they are only triggered **after** the data is safely committed to the database.
-
-```mermaid
-sequenceDiagram
-    participant App as Business Logic
-    participant UOW as UnitOfWork
-    participant DB as Database Session
-    participant ED as EventDispatcher
-
-    Note over App,UOW: Enter 'async with uow:' block
-    UOW->>DB: Set uow_managed = True
-    
-    App->>DB: Modify Records (via Repository)
-    DB-->>App: Changes Flushed (Not Saved Yet)
-    
-    App->>UOW: register_event("order.placed", data)
-    Note over UOW: Event stored in _pending_events
-    
-    Note over App,UOW: Exit block (No Errors)
-    UOW->>DB: commit()
-    DB-->>UOW: Success
-    
-    Note over UOW: Data is safe. Dispatching events...
-    loop Post-Commit Dispatch
-        UOW->>ED: dispatch("order.placed", data)
-    end
-```
+Coordinate multiple domain operations into a single atomic transaction with safe, post-commit event dispatching.
 
 ---
 
-## 🛠️ Automated Transactional Boundaries
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Transaction Orchestrator</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Highly Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>SQLAlchemy 2.0 / asyncio</strong>
+  </div>
+</div>
 
-ZCore utilizes the asynchronous context manager protocol (`async with`) to automate the start and end of your transactions. This removes the need for manual `commit()` or `rollback()` calls in your business logic.
+## The Challenge
+In complex business flows (e.g., a **Checkout** involving Inventory, Payment, and Shipping), maintaining data integrity is difficult. Standard implementations often suffer from:
+1.  **Premature Commits:** A sub-service (e.g., `InventoryService`) commits its changes independently. If the subsequent `PaymentService` fails, the inventory is already deducted, leaving the system in an inconsistent state.
+2.  **Ghost Notifications:** An event (like a "Welcome Email") is dispatched as soon as a user is created. If the database transaction later fails and rolls back, the user receives an email for an account that doesn't exist.
+3.  **Boilerplate Fatigue:** Wrapping every multi-step operation in `try/except/rollback` blocks leads to noisy, error-prone code.
 
-| Phase | Behavior | Purpose |
-| :--- | :--- | :--- |
-| 🏁 **Entry** | Sets `uow_managed = True`. | Tells internal services to skip their individual commits. |
-| 🛑 **Exception** | Triggers `rollback()`. | Discards all changes if any part of the block fails. |
-| ✅ **Success** | Triggers `commit()`. | Saves all changes to the database permanently. |
-| 🛡️ **Exit** | Sets `uow_managed = False`. | Cleans up the session state for the next operation. |
+## The ZCore Elegance
+The `UnitOfWork` (UOW) acts as the single source of truth for a transaction's lifecycle. It marks the database session as "Managed," signaling to all internal ZCore services that they must defer their commits. Furthermore, it provides an event buffer that guarantees domain events are **only dispatched after** a successful database commit.
+
+=== "ZCore Unit of Work"
+        :::python
+        from zcore import UnitOfWork, Inject
+
+        async def checkout_flow(
+            data: CheckoutSchema,
+            order_service: OrderService = Inject(OrderService),
+            inventory_service: InventoryService = Inject(InventoryService),
+            dispatcher: EventDispatcher = Inject(EventDispatcher),
+            session: AsyncSession = SessionDep
+        ):
+            # 1. Atomic context manager
+            async with UnitOfWork(session, dispatcher) as uow:
+                # Sub-services detect UOW and skip internal commits
+                order = await order_service.place_order(data)
+                await inventory_service.reduce_stock(order.items)
+                
+                # 2. Register event for post-commit dispatch
+                uow.register_event("order.placed", {"id": order.id})
+                
+                # 3. Auto-commit on exit / Auto-rollback on exception
+
+=== "Raw SQLAlchemy Implementation"
+        :::python
+        async def checkout_flow(data, db, dispatcher):
+            try:
+                # 1. Manual order logic
+                order = await create_order(db, data)
+                # 2. Manual inventory logic
+                await reduce_stock(db, order.items)
+                
+                # 3. Manual commit
+                await db.commit()
+                
+                # 4. Manual event dispatch (Risk: if commit failed, 
+                # or if this fails, logic becomes messy)
+                await dispatcher.dispatch("order.placed", {"id": order.id})
+            except Exception:
+                # 5. Manual rollback
+                await db.rollback()
+                raise
 
 ---
 
-## 🛡️ Safe Post-Commit Event Dispatching
+## Boundaries & Integration
+ZCore’s UOW is a high-level orchestrator that respects underlying SQLAlchemy protocols.
 
-A common engineering pitfall is dispatching external actions—like sending an SMS or notifying a payment gateway—before the database has actually saved the data. If the database save fails at the last millisecond, your system becomes inconsistent (e.g., a customer gets a "Thank You" email for an order that was never saved).
-
-ZCore solves this by buffering events. Events are only dispatched if `session.commit()` is successful:
-
-```python
-async def commit(self) -> None:
-    try:
-        await self.session.commit()
-    except Exception as e:
-        logger.error(f"Transaction commit failed: {e}")
-        await self.session.rollback()
-        raise
-
-    # Only reached if the database save was 100% successful
-    while self._pending_events:
-        event_name, payload = self._pending_events.pop(0)
-        try:
-            await self.dispatcher.dispatch(event_name, payload)
-        except Exception as ex:
-            # Failed handlers are logged but don't break the transaction
-            logger.error(f"Event handler failed for event '{event_name}': {ex}")
-```
+*   **Session Native:** The UOW operates on a standard SQLAlchemy `AsyncSession`. You can perform raw SQL executions within a UOW block, and they will be part of the same atomic transaction.
+*   **Service Interlock:** ZCore's `BaseService` is programmed to check for the `uow_managed` flag. It will only commit if it is the primary owner of the session, ensuring it doesn't break a UOW's boundary [service/base.py].
+*   **Bypass:** For single-operation requests (like a simple GET or a standalone POST), you do not need the UOW. ZCore services will handle their own "Safe Commit" logic automatically.
 
 ---
 
-## 💻 Practical Usage
+## Under-the-Hood Spec
 
-Using the Unit of Work is straightforward. It is designed to wrap around your service calls:
+### 1. The `uow_managed` Metadata
+When entering the `async with` block, the UOW sets `session.info["uow_managed"] = True` [db/uow.py]. This is a standard SQLAlchemy metadata dictionary. ZCore services inspect this flag before calling `commit()`. If `True`, they execute a `flush()` to send changes to the DB buffer but skip the `commit()`, delegating finality to the UOW.
 
-```python
-async def process_checkout(self, user_id, cart_items):
-    # The UOW ensures both order creation and inventory update succeed together
-    async with UnitOfWork(self.session, self.dispatcher) as uow:
-        order = await self.order_service.create_order(user_id, cart_items)
-        await self.stock_service.reduce_inventory(cart_items)
-        
-        # Register an event that runs only after a successful save
-        uow.register_event("order.processed", {"order_id": order.id})
-```
+### 2. Transactional Event Buffering
+The UOW maintains an internal `_pending_events` list [db/uow.py]. When `register_event()` is called, the event is not fired immediately. Instead, it is stored in the buffer. The UOW only iterates through this list and calls `dispatcher.dispatch()` **after** `session.commit()` has successfully returned.
 
----
+### 3. Automated Lifecycle Safety
+The `__aexit__` method handles the logic of the transaction [db/uow.py]. If an exception was raised inside the block, it triggers `rollback()` and clears the event buffer. If no exception occurred, it triggers `commit()`. This ensures that even if a developer forgets to call commit manually, the transaction is handled correctly by the context manager.
 
-## 💡 Engineering Insights
-
-!!! tip "💡 Ensuring Atomicity"
-    The Unit of Work is your best tool for ensuring **Atomicity**. If your `reduce_inventory` call fails, the `order` created just a line above will be automatically rolled back from the database as if it never happened.
-
-!!! info "🛡️ Fault Isolation"
-    ZCore wraps every event handler in a `try/except` block. This ensures that if a "Welcome Email" service is temporarily down, it won't crash your entire checkout process or prevent other listeners from working.
+!!! success "Event Isolation"
+    If a database commit succeeds but an event handler subsequently fails, the database remains committed. ZCore logs the event handler failure separately, ensuring that side effects (like failing to send an email) do not retroactively break your database integrity.

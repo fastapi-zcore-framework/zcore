@@ -1,67 +1,97 @@
-# 🧠 Framework Engine & Plugin Protocol
+# Framework Engine & Orchestration
 
-The ZCore `Kernel` is the modest orchestration engine at the heart of every application. It views your software not as a single block of code, but as a collection of self-contained **Plugins**. The Kernel's primary job is to coordinate these plugins, ensuring they are configured correctly and initialized in the exact order their dependencies require.
-
----
-
-## 📜 The Plugin Contract (Protocol)
-
-In ZCore, a "Plugin" is any module that follows a specific set of rules (a Protocol). This structure ensures that whether you are building a simple logger or a complex payment system, the framework knows exactly how to talk to your code.
-
-| Method | Timing | Practical Use Case |
-| :--- | :--- | :--- |
-| 🛠️ `setup(app)` | **Immediate** | Registering routes and binding DI singletons. |
-| 🏁 `before_startup` | **Pre-flight** | Verifying environment variables or file permissions. |
-| 🔥 `on_startup` | **Bootstrapping** | Opening database pools or warming up caches. |
-| ✨ `after_startup` | **Post-launch** | Triggering health checks or background workers. |
-| 🛑 `on_shutdown` | **Cleanup** | Safely closing connections and flushing buffers. |
+The central nervous system coordinating plugin lifecycles, dependency resolution, and modular application transitions.
 
 ---
 
-## 📐 Topological Dependency Resolution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Core Orchestrator</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Infrastructure</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>graphlib / Protocol</strong>
+  </div>
+</div>
 
-One of the most practical features of the Kernel is how it handles dependencies. If your `AnalyticsPlugin` needs the `DatabasePlugin` to be ready first, you simply declare it. 
+## The Challenge
+As FastAPI projects grow, the initialization sequence becomes a "procedural soup" inside `main.py`. Developers often encounter:
+1.  **Race Conditions:** A service attempting to warm up a cache before the database connection pool is initialized.
+2.  **Circular Import Deadlocks:** Modules importing each other's setup functions during startup.
+3.  **Missing Requirements:** An application starting partially even when critical infrastructure (like a message broker plugin) failed to register.
+4.  **Tear-down Leaks:** External connections (Redis, DB) not being closed in the correct order during shutdown, causing hanging processes.
 
-The Kernel uses a mathematical approach called **Topological Sorting** to build a Directed Acyclic Graph (DAG). This ensures that no matter how many plugins you have, they always start in a sequence where every "parent" is ready before the "child" begins.
+## The ZCore Elegance
+The `Kernel` manages the application through a **Topological Plugin System**. Every architectural unit is treated as a `Plugin` with declared dependencies. The Kernel calculates the mathematically correct initialization order using a Directed Acyclic Graph (DAG), ensuring every component is ready before the next one starts.
 
-```mermaid
-graph TD
-    DB[1. Database Connection] -->|Required By| Auth[2. Identity & Auth]
-    Auth -->|Required By| Products[3. Product Catalog]
-    Auth -->|Required By| Orders[4. Order Management]
-    Products -->|Required By| Search[5. Search Indexer]
-```
+=== "ZCore Topological Plugins"
+        :::python
+        from zcore import Plugin, Kernel
 
-### 🛡️ Built-in Engineering Safeguards:
-1.  **Cyclic Detection:** If Plugin A depends on B, and B depends on A, the Kernel will detect this "infinite loop" and abort startup with a clear error message.
-2.  **Missing Requirements:** If a plugin asks for a dependency that isn't registered, the Kernel stops immediately, preventing "partial" system failures that are hard to debug.
+        class PaymentPlugin(Plugin):
+            name = "payments"
+            # Explicitly wait for DB and Logging
+            dependencies = ["db", "logging"]
+
+            def setup(self, app: FastAPI):
+                app.include_router(payment_router)
+
+            async def on_startup(self):
+                await gateway.connect()
+
+        # Kernel sorts and executes in the right order
+        kernel = Kernel()
+        kernel.add_plugin(PaymentPlugin())
+        kernel.add_plugin(DatabasePlugin()) # name="db"
+
+=== "FastAPI Procedural Lifespan"
+        :::python
+        # Manual ordering is fragile and hard to track
+        @asynccontextmanager
+        async def lifespan(app: FastAPI):
+            # You must manually ensure 'db' is before 'payments'
+            await init_db()
+            await init_logging()
+            
+            # If this is moved up by mistake, the app crashes
+            await gateway.connect()
+            yield
+            # Manual shutdown is also tedious
+            await gateway.close()
+            await db.close()
 
 ---
 
-## 🔄 The Lifespan Sequence
+## Boundaries & Integration
+The Kernel is a thin orchestration layer that respects the native FastAPI lifecycle.
 
-The Kernel manages the application lifecycle through a FastAPI context manager. It ensures that startup happens in **forward order** (following dependencies), but shutdown happens in **reverse order** to release resources safely.
-
-```mermaid
-flowchart TD
-    Start([Server Boot]) --> Setup[1. Synchronous setup]
-    Setup --> B[2. before_startup]
-    B --> S[3. on_startup]
-    S --> A[4. after_startup]
-    A --> Running{App Active}
-    Running --> Stop[5. on_shutdown - REVERSE ORDER]
-    Stop --> End([Server Stop])
-```
+*   **Native Lifespan:** The `kernel.lifespan` method is a standard Python `@asynccontextmanager`. It is passed directly to the `FastAPI` constructor, meaning the framework follows the standard Starlette execution path.
+*   **Protocol-Based:** You don't need to inherit from a specific ZCore class; as long as your object satisfies the `Plugin` protocol (having `name`, `version`, `dependencies`, and lifecycle methods), the Kernel will accept it [kernel/plugins.py].
+*   **Bypass:** If a small part of your app doesn't need modularity, you can still register routes or logic directly in `main.py` using standard FastAPI methods—ZCore will ignore these and only manage the registered plugins.
 
 ---
 
-## 💡 Engineering Insights
+## Under-the-Hood Spec
 
-!!! tip "💡 Safe Resource Teardown"
-    By running `on_shutdown` in reverse order, ZCore ensures that the `DatabasePlugin` is the **last** thing to close. This allows other plugins to finish their final database writes before the connection pool is destroyed.
+### 1. DAG-Based Dependency Resolution
+The Kernel utilizes Python's `graphlib.TopologicalSorter` to analyze the `dependencies` list of every plugin [kernel/engine.py]. If Plugin A requires Plugin B, the sorter ensures B is processed first. If a circular dependency is detected (e.g., A -> B and B -> A), ZCore raises a `CycleError` during the `setup` phase, preventing the application from starting in an unstable state.
 
-!!! info "🛡️ Error Resilience"
-    ZCore follows a **Fail-Fast** philosophy. If any plugin fails during its `on_startup` phase, the Kernel aborts the entire sequence and shuts down the server. This prevents your application from running in a "half-broken" state where some features work and others don't.
+### 2. Reverse-Topological Shutdown
+Resource management requires a "First In, Last Out" approach. The Kernel ensures that the `on_shutdown` hooks are executed in the **reverse order** of the startup sequence [kernel/engine.py]. This ensures that shared resources (like the Database) are only closed after the domain modules that depend on them have finished their cleanup tasks.
 
-!!! note "🧠 Why a Protocol?"
-    ZCore uses `typing.Protocol` instead of standard inheritance for plugins. This means your class doesn't *have* to inherit from anything to be a plugin; it just needs to have the right methods. This keeps your code clean and reduces "framework coupling."
+### 3. Missing Dependency Assertion
+During the resolution phase, the Kernel cross-references every declared dependency name against the active registry [kernel/engine.py]. If a plugin declares a dependency that hasn't been registered in the `Kernel`, ZCore halts initialization with a `RuntimeError`, identifying the exact missing dependency by name.
+
+### 4. Triple-Wave Startup
+The Kernel executes startup logic in three distinct, sequential waves across all sorted plugins to ensure total system stability [kernel/engine.py]:
+1.  **`before_startup`**: Verification and pre-checks.
+2.  **`on_startup`**: Primary resource initialization.
+3.  **`after_startup`**: Post-initialization signaling or background task spawns.
+
+!!! info "Kernel Events"
+    The Kernel automatically initializes a central `EventDispatcher` and registers it as a singleton in the DI container during the `setup` phase. This allows plugins to communicate through loosely coupled events without direct imports.

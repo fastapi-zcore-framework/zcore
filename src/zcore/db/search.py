@@ -127,9 +127,9 @@ class SearchEngine:
         if not restricted_set:
             return False
         
-        normalized_path = path.replace("resource.", "").lower()
+        normalized_path = path.lower()
         for restricted in restricted_set:
-            normalized_restricted = restricted.replace("resource.", "").lower()
+            normalized_restricted = restricted.lower()
             
             if normalized_path == normalized_restricted:
                 return True
@@ -351,7 +351,7 @@ class SearchEngine:
                 return date.fromisoformat(value.split("T")[0])
                 
             if python_type is datetime and isinstance(value, str):
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                return datetime.fromisoformat(value)
                 
             if python_type is uuid.UUID and isinstance(value, str):
                 return uuid.UUID(value)
@@ -384,12 +384,18 @@ class SearchEngine:
             
         coerced_value = self._coerce_value(col, value)
 
-        if op == "eq": return col == coerced_value
-        if op == "ne": return col != coerced_value
-        if op == "gt": return col > coerced_value
-        if op == "lt": return col < coerced_value
-        if op == "ge": return col >= coerced_value
-        if op == "le": return col <= coerced_value
+        if op == "eq":
+            return col == coerced_value
+        if op == "ne":
+            return col != coerced_value
+        if op == "gt":
+            return col > coerced_value
+        if op == "lt":
+            return col < coerced_value
+        if op == "ge":
+            return col >= coerced_value
+        if op == "le":
+            return col <= coerced_value
         
         if op == "in": 
             return col.in_(coerced_value if isinstance(coerced_value, (list, tuple)) else [coerced_value])

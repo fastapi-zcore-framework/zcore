@@ -3,6 +3,7 @@ from zcore.config import settings
 
 if TYPE_CHECKING:
     from zcore.kernel.engine import Kernel
+    from zcore.kernel.plugins import Plugin
     from zcore.kernel.di import container, Inject
     from zcore.db.setup import Base, SessionDep, db_manager, get_db
     from zcore.db.repository import BaseRepository
@@ -31,7 +32,8 @@ __all__ = [
     'RouteKey',
     'ResponseWrapper',
     'ZCoreAPIRoute',
-    'Zchema'
+    'Zchema',
+    "Plugin"
 ]
     
 
@@ -81,5 +83,11 @@ def __getattr__(name: str) -> Any:
     if name == "Zchema":
         from zcore.web.projection import Zchema
         return Zchema
+    if name == "RouteKey":
+        from zcore.web.base_router import RouteKey
+        return RouteKey
+    if name == "Plugin":
+        from zcore.kernel.plugins import Plugin
+        return Plugin
     
     raise AttributeError(f"module {__name__!r} has no attribute {name!r}")

@@ -1,154 +1,132 @@
-# 🔐 How-To: Enforcing Full JWT Authentication & Dynamic Scopes
+# JWT Authentication & Scopes
 
-## ❓ The Problem
-
-By default, ZCore uses a placeholder stub dependency (`get_current_user_stub`) for route authorization checks. If you attempt to use route-level security guards out of the box, ZCore will raise a `NotImplementedError`. 
-
-To secure your application, you need to implement a concrete token verification flow, bind your user model to ZCore's security requirements, and override the default stub dependency.
+Secure your API with Argon2id hashing, flexible JWT signing, and protocol-based authorization guards.
 
 ---
 
-## 🛠️ The ZCore Solution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Security / Protocol</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Core</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Argon2id / PyJWT / contextvars</strong>
+  </div>
+</div>
 
-We suggest implementing a complete authentication flow using ZCore's JWT decoding utilities and registering it as a global FastAPI dependency override.
+## The Challenge
+Implementing security in FastAPI often leads to "Hardcoded Identity" problems. Developers either tightly couple their routes to a specific SQLAlchemy User model or manually parse JWTs in every dependency. Furthermore, many projects still use aging hashing algorithms like BCrypt or, worse, run production environments with default, insecure secret keys found in git history.
 
-```mermaid
-graph TD
-    Request[HTTP Request with Bearer Token] -->|FastAPI Routing| Dep[get_current_user Dependency]
-    Dep -->|Extract Header| Token{Token Present?}
-    Token -->|No| AuthErr1[Raise AuthError: Authentication required]
-    Token -->|Yes| Decode[decode_token]
-    Decode -->|Expired / Invalid Signature| AuthErr2[Raise AuthError: Token expired / Invalid]
-    Decode -->|Valid| Query[Query DB / Verify User Status]
-    Query -->|Checks UserProtocol| ReturnUser[Return concrete User instance]
-    ReturnUser -->|Binds Context| Route[Execute endpoint with HasScopes Guard]
-```
+## The ZCore Elegance
+ZCore introduces **Protocol-Based Security**. Instead of depending on a concrete model, the security layer depends on a `UserProtocol`. This allows you to use any database (SQL, NoSQL, or External Auth) as long as your user object provides the required attributes. Security is enforced through reusable `BasePermission` classes that integrate seamlessly with `BaseRouter` and the kernel's context.
+
+=== "ZCore Permission Guards"
+        :::python
+        from zcore import BaseRouter, RouteKey
+        from zcore.security import HasScopes
+
+        class DocumentRouter(BaseRouter[DocCreate, DocUpdate]):
+            model = Document
+            # ... standard config ...
+
+            def get_route_dependencies(self, route_key: RouteKey, action: str):
+                # Automated scope checks based on model actions
+                # e.g., "documents:delete"
+                if route_key == RouteKey.DELETE:
+                    return [HasScopes("admin", action)]
+                
+                return super().get_route_dependencies(route_key, action)
+
+=== "FastAPI Manual Auth"
+        :::python
+        # Manual verification in every route
+        @router.delete("/{id}")
+        async def delete_doc(
+            id: uuid.UUID, 
+            user: User = Depends(get_current_user)
+        ):
+            # 1. Manual active check
+            if not user.is_active: raise AuthError()
+            
+            # 2. Manual scope string management
+            if "admin" not in user.scopes and "documents:delete" not in user.scopes:
+                raise ForbiddenError()
+                
+            # 3. Manual service call
+            await service.delete(id)
 
 ---
 
-### 📦 Step 1: Implement the User Protocol
+## Implementation Guide
 
-First, create a user class that implements ZCore's `UserProtocol`. The user model must provide `id`, `is_active`, `is_superuser`, and the dynamic property `all_scopes`:
+### 1. Define your User Model
+Ensure your SQLAlchemy or Pydantic user model implements the `UserProtocol`.
 
 ```python
-import uuid
-from typing import Set
-from sqlalchemy import String, Boolean, JSON
-from sqlalchemy.orm import Mapped, mapped_column
-from zcore.db.setup import Base
-
 class User(Base):
-    """Database representation matching ZCore's UserProtocol."""
     __tablename__ = "users"
-
-    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    email: Mapped[str] = mapped_column(String(255), unique=True, index=True)
-    is_active: Mapped[bool] = mapped_column(Boolean, default=True)
-    is_superuser: Mapped[bool] = mapped_column(Boolean, default=False)
-    scopes: Mapped[list[str]] = mapped_column(JSON, default=list) # e.g. ["products:view"]
-
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    is_active: Mapped[bool] = mapped_column(default=True)
+    is_superuser: Mapped[bool] = mapped_column(default=False)
+    
     @property
-    def all_scopes(self) -> Set[str]:
-        """Compile and return the dynamic scope set for this user."""
-        scopes_set = set(self.scopes)
-        if self.is_superuser:
-            # Grant superusers implicit system-wide privileges
-            scopes_set.add("*")
-        return scopes_set
+    def all_scopes(self) -> set[str]:
+        # Return a set of strings representing user permissions
+        return {r.name for r in self.roles}
 ```
 
----
-
-### 🛡️ Step 2: Implement the Security Dependency
-
-Next, create a security dependency that extracts the Bearer token from the HTTP `Authorization` header, decodes it using ZCore's `decode_token`, and validates the active user:
+### 2. Override the Identity Provider
+In your `main.py`, you must tell ZCore how to resolve the current user. ZCore provides a `get_current_user_stub` that you must override.
 
 ```python
-from fastapi import Request, Depends
-from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
-from sqlalchemy import select
+from zcore.security import get_current_user_stub, decode_token
 
-from zcore.exceptions.base import AuthError
-from zcore.security.jwt import decode_token
-from zcore.db.setup import get_db, AsyncSession
-from .models import User
-
-# Initialize standard Bearer token scheme extractor
-security_scheme = HTTPBearer(auto_error=False)
-
-async def get_current_user(
-    credentials: HTTPAuthorizationCredentials = Depends(security_scheme),
-    db: AsyncSession = Depends(get_db)
-) -> User:
-    """Validate incoming JWT credentials and return the active user model."""
-    if not credentials or credentials.scheme.lower() != "bearer":
-        raise AuthError(message="Authentication required. Please provide a Bearer token.")
-
-    token = credentials.credentials
-    # Decode the token (automatically raises AuthError if expired or malformed)
+async def my_auth_provider(token: str = Depends(oauth2_scheme)) -> User:
     payload = decode_token(token)
-    user_id_str = payload.get("sub")
+    user_id = payload.get("sub")
+    # Fetch user from DB
+    return await user_service.get(user_id)
 
-    if not user_id_str:
-        raise AuthError(message="Invalid token structure: missing user identifier claims.")
-
-    # Retrieve the user from the database
-    query = select(User).where(User.id == user_id_str)
-    result = await db.execute(query)
-    user = result.scalars().first()
-
-    if not user:
-        raise AuthError(message="User account associated with this token was not found.")
-
-    if not user.is_active:
-        raise AuthError(message="User account is deactivated.")
-
-    return user
+# Register the override
+app.dependency_overrides[get_current_user_stub] = my_auth_provider
 ```
 
 ---
 
-### ⚙️ Step 3: Register the Dependency Override
+## The Auth Lifecycle
 
-In your `main.py` entry point, register your concrete dependency as an override for ZCore's authentication stub:
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/auth-setup.png" 
+  alt="The Auth Lifecycle" width="700">
+</p>
 
-```python
-from fastapi import FastAPI
-from zcore.security.dependencies import get_current_user_stub
-from .auth import get_current_user
-
-app = FastAPI()
-
-# Register the concrete override in FastAPI's dependency map
-app.dependency_overrides[get_current_user_stub] = get_current_user
-```
 
 ---
 
-### 🚦 Step 4: Secure Your API Endpoints
+## Boundaries & Integration
+ZCore provides the cryptographic and logic chassis, while you provide the data.
 
-With the dependency override in place, you can secure your endpoints using ZCore's `HasScopes` guard. The guard automatically checks if the resolved user possesses the required scopes:
-
-```python
-from fastapi import APIRouter, Depends
-from zcore.security.permissions import HasScopes
-from zcore.web.response import ResponseWrapper
-
-router = APIRouter(prefix="/inventory", tags=["Inventory"])
-
-# Secure a single endpoint with scope permissions
-@router.post(
-    "/",
-    dependencies=[Depends(HasScopes("products:create"))],
-    response_model=ResponseWrapper
-)
-async def create_inventory_item():
-    return ResponseWrapper(message="Item created successfully")
-```
+*   **OAuth2 Compatible:** ZCore's JWT utilities work perfectly with FastAPI's `OAuth2PasswordBearer`.
+*   **Hashing Freedom:** While ZCore provides `get_password_hash` using Argon2id, you can use any library for hashing; ZCore services and repositories accept raw strings.
+*   **Bypass Identity:** If you have public routes, simply don't add the `HasScopes` dependency. The `request_context` will remain empty (user_id = None), and ZCore's masking logic will treat the request as unauthenticated.
 
 ---
 
-## 💡 Engineering Insights
+## Under-the-Hood Spec
 
-!!! tip "💡 Superuser Bypass"
-    The `HasScopes` validator contains an `allow_superuser` configuration option (enabled by default). If set to `True`, the permission check is bypassed for users where `is_superuser` is `True`, allowing administrators unrestricted access.
+### 1. Fatal Security Violation Guard
+The `jwt.py` module contains a hard-coded check [security/jwt.py]. If the `ENVIRONMENT` is set to `production` and the `SECRET_KEY` matches the framework's default fallback string, the application will **abort startup** with a `RuntimeError`. This prevents the most common source of production JWT vulnerabilities.
+
+### 2. Argon2id Hardening
+ZCore defaults to Argon2id (the winner of the Password Hashing Competition). The `hashing.py` module configures high-entropy parameters by default: 64MB memory cost and 3 iterations [security/hashing.py]. These parameters can be tuned via `ZCoreCoreSettings` to balance security and latency.
+
+### 3. Protocol-Based "Duck Typing"
+The `HasScopes` permission does not perform an `isinstance()` check against a database model [security/permissions.py]. Instead, it relies on the `UserProtocol` interface. This means your "User" could be a database record, a cached Redis object, or even a Mock object during testing, as long as it has `id`, `is_active`, and `all_scopes`.
+
+!!! success "Security Note"
+    By utilizing the `user_context` within your identity provider, the authenticated user's ID is available project-wide via `get_current_user_id()` without passing the user object through every function call.

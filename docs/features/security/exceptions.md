@@ -1,84 +1,110 @@
-# 🛡️ Exception Handling
+# Centralized Exception Handler
 
-ZCore manages errors with a modest, structured approach. Instead of letting raw Python errors crash your request or leak internal details, ZCore catches domain-specific exceptions and transforms them into standardized, client-friendly JSON responses.
-
----
-
-## 📋 Custom Exception Hierarchy
-
-The framework provides a dedicated exception hierarchy where every error inherits from `AppException`. This design allows you to map business failures directly to standard HTTP status codes.
-
-| Exception Class | HTTP Code | Practical Use Case |
-| :--- | :--- | :--- |
-| 🛑 **`AppException`** | `500` | Generic fallback for unhandled internal failures. |
-| 🔍 **`EntityNotFound`** | `404` | When a specific ID or resource does not exist in the DB. |
-| ♊ **`DuplicateEntity`** | `409` | When a unique constraint (like a duplicate email) is violated. |
-| 🔑 **`AuthError`** | `401` | When credentials are missing, invalid, or expired. |
-| 🚫 **`ForbiddenError`** | `403` | When a user is logged in but lacks required permissions. |
-| ⚠️ **`ValidationError`** | `400` | When business rules are violated (e.g., "Price cannot be zero"). |
+Map domain-level business failures into a standardized, structured API error envelope with zero boilerplate in your route handlers.
 
 ---
 
-## 🛠️ Central Exception Handler
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Error Handling</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Security Integration</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>FastAPI Exception Handlers</strong>
+  </div>
+</div>
 
-ZCore utilizes a global handler (`app_exception_handler`) to intercept any `AppException` raised within your services, repositories, or routers. This ensures that your API remains predictable and never returns a "Broken HTML" page for an error.
+## The Challenge
 
-```mermaid
-graph TD
-    Error[AppException Raised] -->|Intercept| Log[Write Warning to Logs]
-    Log -->|Analyze Context| Envelope[Prepare ResponseWrapper]
-    Envelope -->|Metadata| Payload[Include error_type & custom payload]
-    Payload -->|Serialize| JSON[Return Standardized JSON Response]
-```
+Standard FastAPI error handling often leads to inconsistent API responses:
 
-### 🪵 Transparent Logging
-Whenever an exception is caught, ZCore logs a diagnostic warning. This allows you to monitor failures in production without exposing sensitive tracebacks to the end-user.
+1.  **Scattered Error Logic:** Each endpoint or service layer manually catches failures and returns ad-hoc dictionaries like `{"detail": "Not found"}` or `{"error": "Invalid data"}`, creating a fragmented API contract for frontend consumers.
+2.  **Missing Diagnostic Context:** Internal details (exception type, metadata payload) are lost when converting to HTTP responses, making debugging production incidents harder.
+3.  **Inconsistent HTTP Codes:** The same logical error (e.g., "entity not found") might return 404 in one endpoint, 500 in another, and 400 in a third, depending on where the exception was raised.
 
-```python
-# Standardized Error Envelope returned to the client:
-{
-  "success": false,
-  "message": "Insufficient stock available.",
-  "data": null,
-  "meta": {
-    "error_type": "ValidationError",
-    "payload": { "available": 2, "requested": 10 }
-  }
-}
-```
+## The ZCore Elegance
+
+ZCore provides a thin `AppException` hierarchy that maps directly to HTTP status codes, plus a single global handler that catches them all and formats them into the standard `ResponseWrapper` envelope. Services and repositories raise typed exceptions without any HTTP awareness.
+
+=== "ZCore Typed Exceptions"
+        :::python
+        from zcore.exceptions import EntityNotFound, ValidationError, ForbiddenError
+
+        class PaymentService(BaseService):
+            async def process(self, payment_id: uuid.UUID):
+                payment = await self.repository.get(payment_id)
+                if not payment:
+                    raise EntityNotFound("Payment record not found")
+                if not payment.is_approved:
+                    raise ForbiddenError("Insufficient permissions to process")
+                if payment.amount <= 0:
+                    raise ValidationError("Payment amount must be positive")
+                return payment
+
+        # FastAPI automatically returns:
+        # 404 → {"success": false, "message": "Payment record not found", "meta": {"error_type": "EntityNotFound", "payload": null}}
+
+=== "Standard FastAPI Error Handling"
+        :::python
+        from fastapi import HTTPException
+
+        class PaymentService:
+            async def process(self, payment_id: uuid.UUID):
+                payment = await self.repository.get(payment_id)
+                if not payment:
+                    raise HTTPException(status_code=404, detail="Payment not found")
+                if not payment.is_approved:
+                    raise HTTPException(status_code=403, detail="Forbidden")
+                if payment.amount <= 0:
+                    raise HTTPException(status_code=400, detail="Invalid amount")
+                return payment
+
+        # No standard envelope across endpoints
+        # No automatic error type classification in response
+        # Manual HTTP code management scattered through business logic
 
 ---
 
-## 💻 Practical Usage
+## Boundaries & Integration
 
-We suggest raising these exceptions inside your **Service Layer** to communicate business failures clearly.
+The exception handler is a lightweight, opt-in component registered at the application level.
 
-```python
-from zcore.exceptions.base import ValidationError, EntityNotFound
-
-async def process_order(item_id: str, quantity: int):
-    # 1. Check if resource exists
-    item = await repository.get(item_id)
-    if not item:
-        raise EntityNotFound(message=f"Product '{item_id}' was not found.")
-        
-    # 2. Validate business constraints
-    if item.stock < quantity:
-        raise ValidationError(
-            message="Not enough items in stock.",
-            payload={"stock": item.stock, "requested": quantity}
-        )
-```
+*   **FastAPI Standard:** The `app_exception_handler` is a standard FastAPI exception handler registered via `app.add_exception_handler(AppException, app_exception_handler)`. It works with any FastAPI application, including those not using other ZCore components.
+*   **Payload Customization:** Each exception can carry an optional `payload` dictionary. The handler includes this payload in the response `meta` object, enabling structured error details (e.g., field-level validation errors or conflict resource identifiers).
+*   **Third-Party Compatibility:** Since the handler only catches `AppException` subclasses, standard Python exceptions (e.g., `ValueError`, `KeyError`) and FastAPI's built-in `HTTPException` are unaffected and handled by their default mechanisms.
 
 ---
 
-## 💡 Engineering Insights
+## Under-the-Hood Spec
 
-!!! tip "💡 Structural vs. Business Validation"
-    Use **Pydantic Schemas** for structural validation (e.g., "Is this an email?"). Use **`ValidationError`** inside your Service for business validation (e.g., "Is this email already taken?"). This keeps your layers clean and specialized.
+### 1. Status Code Mapping via Class Attribute
 
-!!! info "🛡️ Payload Flexibility"
-    The `payload` parameter in `AppException` is a modest dictionary. You can use it to return specific field errors, error codes, or helpful hints to the frontend developer, all wrapped inside the `meta` field of the response.
+Each `AppException` subclass defines `status_code` as a class-level integer [exceptions/base.py]. `EntityNotFound` maps to `404`, `ValidationError` to `400`, `AuthError` to `401`, `ForbiddenError` to `403`, and `DuplicateEntity` to `409`. Custom exceptions inherit from `AppException` and can override `status_code` to any valid HTTP status.
 
-!!! warning "🧹 Fail-Fast Philosophy"
-    ZCore encourages "Failing Fast." As soon as a business rule is violated, raise the appropriate exception. The `UnitOfWork` will automatically detect this and rollback any pending database changes, ensuring your data stays consistent.
+### 2. Structured Logging Capture
+
+The `app_exception_handler` logs every exception through `structlog` before constructing the response [exceptions/handlers.py]. The log entry includes `type`, `status_code`, `message`, `payload`, `path`, and `method`—providing a complete audit trail for debugging without exposing sensitive internals to the client.
+
+### 3. Standard API Error Envelope
+
+The handler constructs a `ResponseWrapper[None]` with `success=False` [exceptions/handlers.py]. The `message` field carries the human-readable error string, while `meta.error_type` stores the exact exception class name (e.g., `"EntityNotFound"`) for programmatic consumption. The `meta.payload` field is included only if the exception was raised with contextual metadata.
+
+!!! info "Registration in main.py"
+    The exception handler must be explicitly registered during application bootstrap:
+    ```python
+    from zcore.exceptions import AppException, app_exception_handler
+    app.add_exception_handler(AppException, app_exception_handler)
+    ```
+
+!!! tip "Extending the Hierarchy"
+    To add a custom error type, subclass `AppException` and set `status_code`:
+    ```python
+    class RateLimitExceeded(AppException):
+        status_code = 429
+    ```
+    The existing handler automatically picks up the new type at runtime.
