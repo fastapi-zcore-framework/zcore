@@ -384,12 +384,18 @@ class SearchEngine:
             
         coerced_value = self._coerce_value(col, value)
 
-        if op == "eq": return col == coerced_value
-        if op == "ne": return col != coerced_value
-        if op == "gt": return col > coerced_value
-        if op == "lt": return col < coerced_value
-        if op == "ge": return col >= coerced_value
-        if op == "le": return col <= coerced_value
+        if op == "eq":
+            return col == coerced_value
+        if op == "ne":
+            return col != coerced_value
+        if op == "gt":
+            return col > coerced_value
+        if op == "lt":
+            return col < coerced_value
+        if op == "ge":
+            return col >= coerced_value
+        if op == "le":
+            return col <= coerced_value
         
         if op == "in": 
             return col.in_(coerced_value if isinstance(coerced_value, (list, tuple)) else [coerced_value])

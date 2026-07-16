@@ -1,0 +1,29 @@
+changelog:
+  exclude:
+    labels:
+      - ignore
+    authors:
+      - dependabot[bot]
+  categories:
+    - title: 'Features 🚀'
+      labels:
+        - enhancement
+        - feat
+        - backend
+    - title: 'Bug Fixes 🐛'
+      labels:
+        - bug
+        - fix
+    - title: 'Refactoring & Architecture 🛠️'
+      labels:
+        - refactor
+        - security
+        - di
+        - database
+    - title: 'Documentation 📝'
+      labels:
+        - documentation
+        - docs
+    - title: 'Dependencies & Maintenance ⚙️'
+      labels:
+        - dependencies
