@@ -1,187 +1,109 @@
-# 📁 How-To: Implementing a Custom S3 Storage Provider
+# Cloud Asset Orchestration
 
-## ❓ The Problem
-
-By default, ZCore includes a `LocalStorageProvider` that saves uploaded files directly to the host machine's filesystem. While this works well for development, production environments often require storing files in cloud storage solutions like AWS S3 or MinIO to support scalability and high availability.
-
-To switch storage backends, you need a way to swap the storage provider globally without modifying your application's route handlers or service logic.
+Implement enterprise-grade cloud storage while maintaining local security defaults and rigorous file validation.
 
 ---
 
-## 🛠️ The ZCore Solution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Storage Protocol</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Optional Provider</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>anyio / aiofiles / Magic Bytes</strong>
+  </div>
+</div>
 
-We suggest creating a custom storage class that inherits from ZCore's abstract `StorageProvider` base class and registering it in the IoC container during application bootstrapping.
+## The Challenge
+Handling file uploads in FastAPI is deceptively simple until production requirements hit. Developers usually face:
+1.  **Provider Lock-in:** Code written for `shutil.copyfileobj` (local disk) breaks when moving to AWS S3 or Google Cloud Storage.
+2.  **Insecure Extensions:** Relying on `file.content_type` is dangerous, as attackers can easily spoof MIME types by renaming an executable to `.jpg`.
+3.  **Path Traversal:** Unsanitized filenames allowing attackers to overwrite critical system files via `../../etc/passwd` exploits.
+4.  **Resource Exhaustion:** Large file uploads filling up server RAM or local disk space without pre-emptive size validation.
 
-```mermaid
-graph LR
-    Client[Client Upload Request] --> Router[API Router / Service]
-    Router -->|Resolves interface| SP[StorageProvider interface]
-    
-    subgraph IoC Container Injection
-        SP -->|Injected Singleton| S3[S3StorageProvider Class]
-    end
-    
-    S3 -->|Asynchronously upload| Target[AWS S3 Bucket / MinIO]
-```
+## The ZCore Elegance
+ZCore abstracts storage through the `StorageProvider` protocol. You can swap between `LocalStorageProvider` and a custom cloud provider (like S3) globally by changing a single DI registration. Every provider benefits from ZCore's multi-layered security validators, which verify file headers (Magic Bytes) and enforce strict path isolation.
+
+=== "ZCore S3 Provider Implementation"
+        :::python
+        from zcore.storage import StorageProvider
+        from fastapi import UploadFile
+
+        class S3StorageProvider(StorageProvider):
+            def __init__(self, bucket: str, client: Any):
+                self.bucket = bucket
+                self.client = client
+
+            async def upload(self, file: UploadFile, folder: str) -> str:
+                # Custom S3 logic
+                path = f"{folder}/{file.filename}"
+                await self.client.put_object(Bucket=self.bucket, Key=path, Body=await file.read())
+                return path
+
+        # In main.py: Global swap
+        container.register_singleton(StorageProvider, S3StorageProvider(bucket="my-assets", client=s3))
+
+=== "FastAPI Manual Upload"
+        :::python
+        # Logic is hardcoded to one storage type
+        @app.post("/upload")
+        async def upload_file(file: UploadFile):
+            # 1. Manual Path Traversal Check
+            if ".." in file.filename: raise HTTPException(400)
+            
+            # 2. Manual Size Check
+            # (Requires reading part of the file or trusting headers)
+            
+            # 3. Hardcoded Storage Logic
+            with open(f"uploads/{file.filename}", "wb") as buffer:
+                shutil.copyfileobj(file.file, buffer)
+            
+            # Moving to S3 requires rewriting this entire function.
 
 ---
 
-### 📦 Step 1: Implement the Custom S3 Storage Provider
-
-Create a custom storage provider that implements the abstract `upload`, `upload_stream`, and `delete` methods. 
-
-We use the asynchronous `aioboto3` library to perform non-blocking uploads:
+## Security Validation Layer
+ZCore provides a suite of modular validators that run *before* the file reaches your storage target.
 
 ```python
-import structlog
-from typing import AsyncGenerator
-from fastapi import UploadFile
-import aioboto3
+from zcore.storage import MaxFileSizeValidator, SafeMimeTypeValidator
 
-from zcore.storage.base import StorageProvider
-from zcore.exceptions.base import AppException
-
-logger = structlog.get_logger()
-
-class S3StorageProvider(StorageProvider):
-    """Custom cloud storage integration mapping ZCore operations to AWS S3 / MinIO."""
-
-    def __init__(
-        self, 
-        aws_access_key_id: str, 
-        aws_secret_access_key: str, 
-        bucket_name: str,
-        region_name: str = "us-east-1",
-        endpoint_url: str | None = None # Use for custom targets like MinIO
-    ) -> None:
-        self.session = aioboto3.Session(
-            aws_access_key_id=aws_access_key_id,
-            aws_secret_access_key=aws_secret_access_key,
-            region_name=region_name
-        )
-        self.bucket_name = bucket_name
-        self.endpoint_url = endpoint_url
-
-    async def upload(self, file: UploadFile, folder: str) -> str:
-        """Upload an API file to the configured S3 bucket."""
-        target_path = f"{folder}/{file.filename}"
-        
-        try:
-            async with self.session.client("s3", endpoint_url=self.endpoint_url) as s3:
-                # Read file payload
-                file_data = await file.read()
-                
-                await s3.put_object(
-                    Bucket=self.bucket_name,
-                    Key=target_path,
-                    Body=file_data,
-                    ContentType=file.content_type
-                )
-            logger.info(f"Successfully uploaded file to S3: s3://{self.bucket_name}/{target_path}")
-            return target_path
-        except Exception as e:
-            logger.error(f"Failed to upload file to S3: {e}")
-            raise AppException("Error uploading file to cloud storage.")
-
-    async def upload_stream(
-        self, 
-        file_stream: AsyncGenerator[bytes, None], 
-        filename: str, 
-        folder: str
-    ) -> str:
-        """Stream file bytes directly to S3."""
-        target_path = f"{folder}/{filename}"
-        
-        try:
-            async with self.session.client("s3", endpoint_url=self.endpoint_url) as s3:
-                # To support multipart streaming in S3
-                mpu = await s3.create_multipart_upload(Bucket=self.bucket_name, Key=target_path)
-                parts = []
-                part_number = 1
-                
-                async for chunk in file_stream:
-                    part = await s3.upload_part(
-                        Bucket=self.bucket_name,
-                        Key=target_path,
-                        PartNumber=part_number,
-                        UploadId=mpu["UploadId"],
-                        Body=chunk
-                    )
-                    parts.append({"PartNumber": part_number, "ETag": part["ETag"]})
-                    part_number += 1
-                
-                await s3.complete_multipart_upload(
-                    Bucket=self.bucket_name,
-                    Key=target_path,
-                    UploadId=mpu["UploadId"],
-                    MultipartUpload={"Parts": parts}
-                )
-            return target_path
-        except Exception as e:
-            logger.error(f"S3 streaming upload failed: {e}")
-            raise AppException("Error streaming file payload to cloud storage.")
-
-    async def delete(self, file_path: str) -> bool:
-        """Remove a file from the S3 bucket."""
-        try:
-            async with self.session.client("s3", endpoint_url=self.endpoint_url) as s3:
-                await s3.delete_object(Bucket=self.bucket_name, Key=file_path)
-            return True
-        except Exception as e:
-            logger.error(f"Failed to delete S3 asset: {e}")
-            return False
-```
-
----
-
-### ⚙️ Step 2: Register the Provider in the IoC Container
-
-To configure your application to use the S3 provider, register it as a global singleton in the IoC container during application bootstrapping:
-
-```python
-# main.py
-from zcore.kernel.di import container
-from zcore.storage.base import StorageProvider
-from zcore.config import settings
-from .storage import S3StorageProvider
-
-# Instantiate the custom S3 provider
-s3_provider = S3StorageProvider(
-    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-    bucket_name=settings.AWS_BUCKET_NAME,
-    endpoint_url=settings.AWS_S3_ENDPOINT_URL # Optional: configure for MinIO
+# Configure local storage with strict security
+storage = LocalStorageProvider(
+    base_path="./uploads",
+    validators=[
+        MaxFileSizeValidator(max_size_mb=5),
+        SafeMimeTypeValidator(allowed_mimes=["image/png", "image/jpeg", "application/pdf"])
+    ]
 )
-
-# Register the provider as a singleton in the IoC container
-container.register_singleton(StorageProvider, s3_provider)
 ```
 
 ---
 
-### 🚦 Step 3: Usage in Your Application
+## Boundaries & Integration
+The storage layer is a decoupled utility that respects FastAPI's standard types.
 
-Because your services resolve the storage provider through the IoC container, you can use S3 storage throughout your application without changing your business logic:
-
-```python
-from fastapi import APIRouter, UploadFile, Depends
-from zcore.storage.base import StorageProvider, get_storage_provider
-
-router = APIRouter(prefix="/assets")
-
-@router.post("/upload")
-async def upload_user_avatar(
-    file: UploadFile,
-    storage: StorageProvider = Depends(get_storage_provider)
-):
-    # This automatically uses S3StorageProvider and returns the S3 path
-    saved_path = await storage.upload(file, folder="avatars")
-    return {"path": saved_path}
-```
+*   **FastAPI `UploadFile`:** The `upload` method accepts the standard Starlette/FastAPI `UploadFile` object, ensuring compatibility with native multipart form handling.
+*   **Dependency Injection:** Use `get_storage_provider` as a FastAPI dependency to resolve the active provider in any route, regardless of whether it is local or cloud-based.
+*   **AnyIO Integration:** The `LocalStorageProvider` uses `anyio.Path` and `aiofiles` for non-blocking I/O, ensuring that file operations do not freeze the main event loop.
 
 ---
 
-## 💡 Engineering Insights
+## Under-the-Hood Spec
 
-!!! tip "💡 Decoupled Scalability"
-    By abstracting S3 operations behind the `StorageProvider` interface, you can easily swap storage providers (e.g., switching from S3 to local storage for local testing) simply by changing the container's registered singleton.
+### 1. Magic Byte Content Verification
+The `SafeMimeTypeValidator` does not trust the file extension or the browser-supplied `content_type` [storage/validators.py]. It reads the first **2048 bytes** of the file and compares them against hardcoded "Magic Byte" signatures (e.g., `\x89PNG\r\n\x1a\n`). It also performs a specific security check to block high-risk patterns like `<?php`, `<script`, or Unix shebangs (`#!`) even if they appear in supposedly "safe" files.
+
+### 2. Recursive Path Traversal Protection
+The `LocalStorageProvider` uses `Path.resolve()` to normalize destination paths [storage/local.py]. Before saving, it utilizes `is_relative_to(base_path)` to verify that the final path (after resolving all `../` segments) still resides within the configured root directory. If an exploit is detected, it raises a `SecurityException` and halts the write.
+
+### 3. Non-Blocking Stream Support
+In addition to standard uploads, the interface supports `upload_stream` [storage/base.py]. This allows for direct binary streaming from asynchronous sources (like WebSockets or other external APIs) directly into storage, minimizing memory footprint for very large files.
+
+!!! info "Security Protocol"
+    By default, the `LocalStorageProvider` truncates filenames to a randomized 15-character UUID prefix [storage/local.py]. This prevents filename collisions and obscures the original file structure from end-users.

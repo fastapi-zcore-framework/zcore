@@ -1,101 +1,127 @@
-# ⚡ Distributed Caching & Local Eviction
+# Distributed Caching
 
-ZCore features a practical hybrid caching strategy. It utilizes a modest, thread-safe local cache (`TTLLRUCache`) as its primary layer, with the ability to scale to a distributed Redis cache when your environment requires it. This "two-tier" approach ensures that even if your central cache server goes offline, your application remains responsive.
-
----
-
-## 📐 Technical Architecture
-
-The caching system is designed to prioritize speed while maintaining a safety net. It automatically coordinates between in-memory storage and external distributed storage.
-
-```mermaid
-flowchart TD
-    Get[Request Cache Key] --> CheckRedis{Redis Configured?}
-    CheckRedis -->|Yes| QueryRedis[Query Redis Server]
-    QueryRedis -->|Hit| Return[Return Data]
-    QueryRedis -->|Miss / Error| QueryLocal[Query Local TTLLRUCache]
-    CheckRedis -->|No| QueryLocal
-    
-    QueryLocal -->|Hit| Return
-    QueryLocal -->|Miss / Expired| ReturnNone[Return None]
-    
-    subgraph Garbage Collection [Background Worker]
-        Loop[Eviction Loop] -->|Every 60s| Sweep[Sweep Active Caches]
-        Sweep -->|Weak Reference| Purge[Purge Expired Keys]
-    end
-```
+Accelerate response times with a transparent, dual-layer caching system that routes through Redis and falls back to a thread-safe in-memory LRU store with automatic TTL eviction.
 
 ---
 
-## 🏢 1. Local Layer: The TTLLRUCache
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Performance Layer</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Optional Ecosystem</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Redis / OrderedDict + threading</strong>
+  </div>
+</div>
 
-The local cache is a modest but robust in-memory store. It combines **Least Recently Used (LRU)** eviction with **Time-To-Live (TTL)** expiration to keep your memory footprint small.
+## The Challenge
 
-*   **🛡️ Thread Safety**: Active read/write operations use reentrant locks (`threading.Lock()`). This prevents data corruption when multiple threads or tasks access the cache simultaneously.
-*   **📉 LRU Eviction**: When the cache reaches its `maxsize` (default: 1000), it automatically discards the oldest, least-accessed items to make room for new ones.
-*   **🧹 Memory Leak Protection**: ZCore uses **Weak References** (`weakref.WeakSet`) to track active caches. This allows the Python garbage collector to remove cache instances from memory as soon as they are no longer needed, even if the background eviction loop is still running.
+Caching in an async Python application introduces several subtle failure modes:
+
+1.  **Cache Stampede Risk:** When the distributed cache (Redis) goes down, every request hits the database simultaneously, overwhelming the connection pool.
+2.  **Type Corruption:** Serialized JSON blobs are returned as raw dictionaries. Consumers must manually validate or cast the data back to the expected Pydantic model, often leading to `AttributeError` at runtime.
+3.  **Memory Leaks:** Naive in-memory caches keep references to objects indefinitely. In long-running async workers, this causes unbounded memory growth and eventual OOM kills.
+4.  **Stale Data Propagation:** Expired keys linger in memory until explicitly checked, returning stale data to users.
+
+## The ZCore Elegance
+
+ZCore provides `BaseCache`, a generic interface that transparently routes reads and writes through Redis when available, falling back to a local `TTLLRUCache` with thread-safe access, automatic TTL expiry, and weak-reference tracking for global eviction sweeps.
+
+=== "ZCore Dual-Layer Caching"
+        :::python
+        from zcore.cache import BaseCache, init_cache, close_cache
+
+        # 1. Initialize Redis (optional) and eviction loop
+        await init_cache(redis_url="redis://localhost:6379/0")
+
+        # 2. Create a typed cache for a domain
+        product_cache = BaseCache[ProductOut](prefix="products")
+
+        # 3. Cache-aside pattern with automatic Pydantic validation
+        async def get_product(id: uuid.UUID) -> ProductOut:
+            cached = await product_cache.get(str(id), target_type=ProductOut)
+            if cached:
+                return cached
+            product = await fetch_from_db(id)
+            await product_cache.set(str(id), product.model_dump(), ttl=300)
+            return product
+
+        # 4. Graceful shutdown
+        await close_cache()
+
+=== "Standard Manual Caching"
+        :::python
+        import json
+        import redis.asyncio as aioredis
+        from functools import lru_cache
+
+        # Manual Redis client with no fallback
+        client = aioredis.from_url("redis://localhost:6379/0")
+
+        @lru_cache(maxsize=128)  # No TTL, no thread-safety in async
+        async def get_product(id: uuid.UUID) -> ProductOut:
+            raw = await client.get(f"product:{id}")
+            if raw:
+                data = json.loads(raw)
+                return ProductOut(**data)  # No validation, no fallback on Redis failure
+            product = await fetch_from_db(id)
+            await client.set(f"product:{id}", product.model_dump_json(), ex=300)
+            return product
+
+        # Redis failure → all requests hit DB → stampede
+        # lru_cache is not async-safe
+        # No global cleanup mechanism
 
 ---
 
-## 🌍 2. Distributed Layer: BaseCache Abstraction
+## Cache Resolution Strategy
 
-The `BaseCache[T]` class provides a transparent interface. You don't need to write separate logic for Redis or local storage; the framework handles the "fallback" logic for you.
-
-### 🧪 Structured Data & Validation
-When you retrieve data, ZCore doesn't just return a raw string. It automatically decodes the JSON and can validate it against a **Pydantic model**. This ensures that your cached data always matches the expected structure.
-
-```python
-# Internal validation logic
-parsed_data = json_loads(raw_val)
-if target_type:
-    return target_type.model_validate(parsed_data)
-```
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/cache.png" 
+  alt="Cache Resolution Strategy" width="700">
+</p>
 
 ---
 
-## 🔄 Lifecycle Management
+## Boundaries & Integration
 
-ZCore manages the cache lifecycle through two modest functions typically called during application startup and shutdown.
+The caching layer is fully optional and designed to be composed with other ZCore components.
 
-| Function | Responsibility |
-| :--- | :--- |
-| **`init_cache()`** | Connects to Redis and starts the background task that purges expired local keys every minute. |
-| **`close_cache()`** | Stops the background worker and safely closes any open Redis connections. |
-
----
-
-## 💻 Practical Usage
-
-We suggest defining your caches within your domain modules. This keeps your keys organized and avoids naming collisions.
-
-```python
-from zcore.cache.base import BaseCache
-from pydantic import BaseModel
-
-# 1. Define what your cached data looks like
-class ProductCache(BaseModel):
-    id: str
-    price: float
-
-# 2. Create a namespaced cache instance
-cache = BaseCache[ProductCache](prefix="products")
-
-# 3. Set a value with a 1-hour expiration (TTL in seconds)
-await cache.set("p_101", {"id": "p_101", "price": 29.99}, ttl=3600)
-
-# 4. Get the value back as a validated Pydantic object
-product = await cache.get("p_101", target_type=ProductCache)
-```
+*   **Pydantic-First:** The `get` method accepts an optional `target_type` parameter. If a Pydantic model is provided, the deserialized dictionary is validated through `model_validate` before being returned. This guarantees type safety without manual casting.
+*   **Prefix Isolation:** Each `BaseCache` instance is created with a `prefix` string (e.g., `"products"`). All keys are automatically namespaced as `{prefix}:{key}`, preventing collision between different cache domains sharing the same Redis instance.
+*   **Background Eviction:** `init_cache` schedules a background `asyncio.Task` that runs every 60 seconds, calling `TTLLRUCache.evict_all_expired()` to purge stale records from all active in-memory cache instances.
 
 ---
 
-## 💡 Engineering Insights
+## Under-the-Hood Spec
 
-!!! tip "💡 Graceful Fallback"
-    The caching system is designed for **Resilience**. If your Redis server encounters a network timeout or a crash, ZCore logs a warning and immediately tries to find the data in the local memory. Your users likely won't even notice the disruption.
+### 1. BaseCache / TTLLRUCache Fallback Architecture
 
-!!! info "🛡️ Namespace Isolation"
-    Always use a `prefix` when initializing `BaseCache`. This ensures that a key named `101` in your "products" module doesn't overwrite a key named `101` in your "orders" module inside the shared Redis database.
+`BaseCache` holds a reference to a `TTLLRUCache` instance (default `maxsize=1000`) as `_local_cache` [cache/base.py]. On `set`, the method attempts Redis first. If Redis is unavailable or raises an exception (connection refused, timeout, etc.), the serialized value is written to the local LRU store. On `get`, the method tries Redis, then falls back to the local cache.
 
-!!! warning "🧹 The Eviction Loop"
-    Remember to call `init_cache()` in your `main.py` or startup plugin. Without it, the background worker won't start, and expired local keys will remain in memory until the `maxsize` limit is reached.
+### 2. Pydantic Type Validation on Cache Hits
+
+When `target_type` is provided and is a `BaseModel` subclass, the `get` method calls `target_type.model_validate(parsed_data)` [cache/base.py]. This ensures that the deserialized payload conforms exactly to the expected schema. If validation fails (e.g., due to schema drift between cache writes and reads), `None` is returned and the miss is treated as a cache miss.
+
+### 3. Eviction Loop Safety
+
+The global eviction loop `_start_eviction_loop` runs as a background `asyncio.Task` [cache/base.py]. It catches `asyncio.CancelledError` to exit cleanly and wraps the eviction call in a generic `except Exception` to prevent a single faulty cache instance from crashing the entire loop.
+
+### 4. WeakRef Active Cache Registry
+
+`TTLLRUCache` registers every new instance in a module-level `weakref.WeakSet` called `_active_caches` [cache/ttllru_cache.py]. This enables `evict_all_expired` to iterate over all existing cache instances without preventing garbage collection of discarded instances. When an instance is garbage collected, its weak reference is automatically removed from the set.
+
+### 5. Thread-Safe LRU with Reentrant Lock
+
+Each `TTLLRUCache` instance uses a `threading.Lock` to protect all read and write operations [cache/ttllru_cache.py]. The underlying storage is an `OrderedDict` mapping keys to `(expiry_timestamp, value)` tuples. On `get`, expired keys are detected inline by comparing `time.time()` against the stored expiry, and are popped before `move_to_end` slides the remaining entry to the front.
+
+!!! info "Redis Dependency"
+    The `BaseCache` Redis client (`redis.asyncio`) is imported lazily. If `redis` is not installed, `REDIS_AVAILABLE` is set to `False` and the cache operates exclusively in local fallback mode without raising import errors.
+
+!!! tip "Sizing the Local Cache"
+    The local `TTLLRUCache` defaults to a `maxsize` of 1000 entries. Adjust this in environments with high cardinality but limited memory. The LRU policy ensures that the most recently accessed items are always available.

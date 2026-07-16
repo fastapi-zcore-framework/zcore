@@ -1,148 +1,84 @@
-# 🧱 How-To: Project-Wide Base Router & Dependency Scalability
+# Project-Wide Router Extensibility
 
-## ❓ The Problem
-
-In a real-world ZCore project, you often need to apply **global middleware-like behavior** across all your API routes — for example:
-
-*   📝 Logging the request's IP address and user agent
-*   ⏱️ Rate-limiting or throttling
-*   🔍 Enforcing tenant isolation checks
-*   📊 Collecting observability metrics (request duration, status codes)
-
-Without a centralized mechanism, you would have to duplicate these dependencies in **every single router** — violating the DRY principle and making maintenance a nightmare.
+Scale your API architecture by extending the BaseRouter to enforce project-wide security standards and custom endpoint behaviors.
 
 ---
 
-## 🛠️ The ZCore Solution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Routing Architecture</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Recommended for Scale</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>FastAPI / Python OOP</strong>
+  </div>
+</div>
 
-ZCore's `get_route_dependencies` method makes it trivial to build a **project-wide base router** that automatically injects shared dependencies into every endpoint. This follows the same proven pattern used by Django's class-based views, Spring's `ApiController`, and .NET's controller base classes.
+## The Challenge
+In a rapidly growing project, standard CRUD routers often become a source of technical debt. You might find yourself manually adding the same "Admin Only" dependency to the `DELETE` route of 20 different modules. Or perhaps you decide that every `GET_ALL` request across the entire project must include a specific rate-limiting header. 
 
-### 🏗️ Step 1: Create a Project-Wide Base Router
+Using raw FastAPI `APIRouter` or rigid scaffolding tools forces you to repeat this logic in every file. If the requirement changes, you have to find and replace code in dozens of places, increasing the risk of security oversights.
 
-Create a single file — for example `app/core/router.py` — that contains your application's foundational router class:
+## The ZCore Elegance
+ZCore's `BaseRouter` is designed for **Object-Oriented Inheritance**. Instead of using it directly, you can create a `ProjectBaseRouter` for your API. By overriding the lifecycle methods—specifically `get_route_dependencies` and `get_route_action`—you can inject global security policies or modify the naming convention of permissions across all your domain modules from a single source of truth.
 
-```python
-# app/core/router.py
-from zcore import BaseRouter, RouteKey
-from typing import Any
+=== "ZCore Architectural Extension"
+        :::python
+        # 1. Define your project-wide base router
+        class MyProjectBaseRouter(BaseRouter[CreateSchemaType, UpdateSchemaType]):
+            
+            def get_route_dependencies(self, route_key: RouteKey, action: str):
+                # Enforce project-wide policy: All DELETEs require 'superadmin'
+                deps = super().get_route_dependencies(route_key, action)
+                
+                if route_key == RouteKey.DELETE:
+                    deps.append(HasScopes("superadmin"))
+                    
+                return deps
 
-class AppBaseRouter(BaseRouter[CreateSchemaType, UpdateSchemaType]):
-    """Foundation router for the entire application.
+        # 2. Use your custom base in domain routers
+        class UserRouter(MyProjectBaseRouter[UserCreate, UserUpdate]):
+            model = User
+            # DELETE /users now automatically requires 'users:delete' AND 'superadmin'
 
-    Every domain router should inherit from this class to receive
-    project-wide dependencies automatically.
-    """
+=== "FastAPI Manual Repetition"
+        :::python
+        # You must remember to add the dependency to every router manually
+        router = APIRouter(prefix="/users")
 
-    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
-        # 1. Inject project-wide dependencies (monitoring, logging, rate-limiting)
-        dependencies = [LogRequestIP(), RateLimiter()]
+        @router.delete("/{id}", dependencies=[Depends(HasScopes("users:delete")), Depends(HasScopes("superadmin"))])
+        async def delete_user(id: uuid.UUID):
+            pass
 
-        # 2. Delegate to ZCore's default behavior (HasScopes, etc.)
-        dependencies.extend(super().get_route_dependencies(route_key, action))
-
-        return dependencies
-```
-
-### 🎯 Step 2: Domain Routers Inherit from Your Base
-
-Once the base router is defined, every domain router becomes dramatically simpler:
-
-```python
-# app/products/routers.py
-from app.core.router import AppBaseRouter
-
-class ProductRouter(AppBaseRouter):
-    model = Product
-    # That's it! Monitoring, IP logging, and security scopes are all handled automatically.
-```
-
----
-
-## 💎 Why This Pattern Is a Scalability Masterpiece
-
-### 1. 🧩 DDD-Friendly: Different Bases for Different Contexts
-
-In large projects, you may need different behavior for different domain contexts. You can create **multiple base routers** tailored to specific needs:
-
-```python
-# Base for admin endpoints (strict auditing, admin role check)
-class AdminBaseRouter(BaseRouter[CreateSchemaType, UpdateSchemaType]):
-    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
-        dependencies = [AuditLogger(), RequireAdminRole()]
-        dependencies.extend(super().get_route_dependencies(route_key, action))
-        return dependencies
-
-# Base for public endpoints (lighter monitoring)
-class PublicBaseRouter(BaseRouter[CreateSchemaType, UpdateSchemaType]):
-    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
-        dependencies = [RateLimiter()]
-        dependencies.extend(super().get_route_dependencies(route_key, action))
-        return dependencies
-```
-
-This level of granularity was **impossible** with the old static permission properties.
-
-### 2. 📐 Pure DRY & KISS
-
-*   **DRY:** Global logic is written **once** in the base router file. Zero duplication across domains.
-*   **KISS:** Domain developers don't need to think about infrastructure concerns. They just inherit and declare their model.
-
-### 3. 🚀 Superior Developer Experience (DX)
-
-This pattern is exactly what senior architects use in enterprise frameworks:
-
-| Framework | Pattern |
-| :--- | :--- |
-| **Django** | Class-based views with `BaseView` |
-| **Spring Boot** | `@ControllerAdvice` / Base `ApiController` |
-| **ASP.NET Core** | Base `ControllerBase` class |
-| **ZCore** | `get_route_dependencies` in project base router |
+        # ... Then repeat this exact dependency list in /products, /orders, /billing ...
+        # If the policy changes to "manager" instead of "superadmin", you edit 20 files.
 
 ---
 
-## 🔧 Selective Override Within a Domain
+## Boundaries & Integration
+Customized routers maintain full compatibility with the FastAPI ecosystem.
 
-Even with a project-wide base, individual domains can still override specific dependencies without losing the global behavior:
-
-```python
-# app/orders/routers.py
-from app.core.router import AppBaseRouter
-from zcore.web.base_router import RouteKey
-
-class OrderRouter(AppBaseRouter):
-    model = Order
-
-    def get_route_dependencies(self, route_key: RouteKey, action: str) -> list[Any]:
-        # Add a domain-specific check for DELETE operations
-        if route_key == RouteKey.DELETE:
-            return [CanCancelOrder()]
-
-        # Everything else inherits global deps + scopes via super()
-        return super().get_route_dependencies(route_key, action)
-```
+*   **Dependency Normalization:** ZCore's internal `_normalize_dependencies` helper ensures that whether you return a raw callable, a class, or a `FastAPI.Depends` object from your overrides, it is correctly wrapped and registered [web/base_router.py].
+*   **Selective Overrides:** You can override a single endpoint method (e.g., `delete_endpoint`) in your project-base to implement "Soft Delete" logic project-wide, while leaving `POST` and `GET` to use the standard ZCore implementation.
+*   **Middleware Alternatives:** For logic that applies to *all* requests regardless of the route (like Correlation IDs), use ZCore Middlewares. Use Router Extensions for logic that varies by `RouteKey` or `Model`.
 
 ---
 
-## 🧪 Verification
+## Under-the-Hood Spec
 
-With the `AppBaseRouter` in place, every endpoint across every domain will:
+### 1. The RouteKey Enum
+The `RouteKey` is a `StrEnum` that maps directly to the scaffolded operations: `POST`, `GET`, `GET_ALL`, `SEARCH`, `UPDATE`, `PATCH`, and `DELETE` [web/base_router.py]. This allows your overrides to use clean, type-safe logic when determining which dependencies to inject.
 
-1. 📝 Log the requesting IP address (`LogRequestIP`)
-2. ⏱️ Apply rate-limiting (`RateLimiter`)
-3. 🛡️ Enforce the appropriate security scope (`HasScopes`)
-4. 🎯 Execute the domain-specific business logic
+### 2. Automatic Dependency Injection (DI)
+The `BaseRouter` doesn't just register functions; it registers closures that utilize `Inject(self.service)` [web/base_router.py]. This means that even in your project-wide base router, the correct domain-specific service is always resolved from the IoC container at runtime.
 
-All of this happens **deterministically at startup** — zero runtime reflection, zero magic.
+### 3. Scoped Action Derivation
+The `get_route_action` method bridges the router to the model [web/base_router.py]. By default, it calls `self.model.actions().VIEW` or `CREATE`. If your project uses a different naming convention for permissions (e.g., `view_products` instead of `products:view`), you can override this single method in your `ProjectBaseRouter` to re-map actions project-wide.
 
----
-
-## 💡 Engineering Insights
-
-!!! tip "💡 One Method to Rule Them All"
-    The old architecture required maintaining up to 8 separate static class variables (`POST_PERMISSIONS`, `GET_PERMISSIONS`, etc.) across every router. The new architecture reduces this to a **single method override** — or zero overrides if you just need defaults.
-
-!!! info "🛡️ Composition Over Inheritance"
-    While inheritance is powerful, you can also compose dependencies by creating reusable dependency factories that your base router calls. This keeps the base router itself clean and focused.
-
-!!! warning "⚠️ Order Matters"
-    Dependencies in the list are executed in the order they are defined. If you need authentication to run before rate-limiting, place `HasScopes` (or your auth dependency) **before** the rate limiter in the returned list.
+!!! info "Advanced Dependency Logic"
+    The `get_route_dependencies` method is called during the router's `__init__` phase [web/base_router.py]. This means your dependency tree is pre-compiled at startup, maintaining FastAPI's high performance during the request-response cycle.

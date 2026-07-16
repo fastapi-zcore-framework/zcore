@@ -1,514 +1,404 @@
-# ZCore Framework Quick Reference (Cheat Sheet)
+# Pocket Reference & Cheat Sheet
 
-This cheat sheet serves as a quick-access reference guide for standard syntax, CLI commands, and configurations across the ZCore framework's 27 architectural layers and capabilities.
-
----
-
-## Block 1: 🖥️ Bootstrapping & CLI
-
-### 1. CLI Reference (`cli`)
-The command-line utility for project scaffolding, application setup, and local development execution.
-
-| Command | Example Usage | Description |
-| :--- | :--- | :--- |
-| `init` | `zc init billing_api` | Initializes a new ZCore project workspace. |
-| `startapp` | `zc startapp checkout -t` | Scaffolds a new domain application with boilerplate code. |
-| `run` | `zc run` | Launches the local reload-enabled development server. |
-| `gensecret` | `zc gensecret` | Generates a secure, 64-character secret key. |
-
-👉 [CLI Reference Documentation](features/infrastructure/cli.md)
+A rapid lookup guide for ZCore's core components, common patterns, and CLI commands. Each section links to the full documentation for deeper context.
 
 ---
 
-### 2. Configuration (`config`)
-Loads environmental configuration maps securely with fallback settings and lazy resolution through the settings proxy.
+## Core Infrastructure
 
-```python
-from zcore.config import settings
+### Dependency Injection
 
-# Lazy attribute resolution avoids premature instantiation during import time
-db_url = settings.DATABASE_URL
-token_lifespan = settings.ACCESS_TOKEN_EXPIRE_MINUTES
+| Concept | Usage |
+|---|---|
+| **IoCContainer** | `container = IoCContainer()` — Central registry for all DI lifecycles |
+| **Inject** | `service: MyService = Inject(MyService)` — FastAPI-compatible DI wrapper |
+| **Singleton** | `container.register_singleton(Interface, instance)` — One instance per app lifetime |
+| **Scoped** | `container.register_scoped(Interface, Impl)` — One instance per HTTP request |
+| **Transient** | `container.register_transient(Interface, Impl)` — New instance every resolution |
+| **Reflection Cache** | `_dependency_signature_cache` — Caches `get_type_hints` results after first resolution |
+| **Nested Dependencies** | Auto-wires recursive constructor graphs — `Service → Repository → Session` |
+| **Annotated Support** | Resolves `Annotated[Type, ...]` by extracting the base type |
+| **SessionDep** | `db: SessionDep` — `Annotated[AsyncSession, Depends(get_db)]` alias |
+| **get_db** | `async def get_db()` — Resolves scoped `AsyncSession` from container |
+
+[Full DI Documentation](features/infrastructure/di.md)
+
+---
+
+### Framework Engine (Kernel)
+
+| Concept | Usage |
+|---|---|
+| **Plugin Protocol** | Class with `name`, `dependencies`, `setup()`, `on_startup()`, `on_shutdown()` |
+| **Kernel** | `kernel = Kernel(); kernel.add_plugin(MyPlugin()); kernel.setup(app)` |
+| **Lifespan** | `FastAPI(lifespan=kernel.lifespan)` — Auto-orders startup/shutdown via DAG |
+| **Dependency Sort** | `graphlib.TopologicalSorter` — Ensures plugins init in correct order |
+| **Missing Check** | Raises `RuntimeError` if a declared plugin dependency is not registered |
+
+[Full Kernel Documentation](features/infrastructure/kernel.md)
+
+---
+
+### Kernel Events
+
+| Concept | Usage |
+|---|---|
+| **EventDispatcher** | `await dispatcher.dispatch("event.name", key=value)` |
+| **Subscribe** | `@dispatcher.subscribe("event.name")` — Decorate any sync/async handler |
+| **Concurrent Execution** | `asyncio.gather(return_exceptions=True)` — All async handlers run in parallel |
+| **Failure Isolation** | One handler exception never blocks other handlers |
+
+[Full Events Documentation](features/infrastructure/events.md)
+
+---
+
+### ASGI Middlewares
+
+| Concept | Usage |
+|---|---|
+| **RequestLogMiddleware** | `app.add_middleware(RequestLogMiddleware)` — Logs method, path, duration, correlation ID |
+| **ScopedDependencyMiddleware** | `app.add_middleware(ScopedDependencyMiddleware)` — Initializes request-scoped DI context |
+| **Correlation ID** | Auto-generated `x-request-id` header, validated against regex, returned in response |
+
+[Full Middleware Documentation](features/infrastructure/middleware.md)
+
+---
+
+### Application Entry (main.py)
+
+| Concept | Usage |
+|---|---|
+| **Bootstrap Order** | `setup_logging()` → `db_manager.init_app()` → `Kernel()` → `FastAPI(lifespan=...)` → `kernel.setup(app)` → middlewares |
+| **Exception Handler** | `app.add_exception_handler(AppException, app_exception_handler)` |
+| **DB-Event Bridge** | `register_db_event_dispatcher(kernel.dispatcher)` |
+
+[Full Main Documentation](features/infrastructure/main.md)
+
+---
+
+### Configuration Settings
+
+| Concept | Usage |
+|---|---|
+| **Settings Proxy** | `from zcore import settings` — Lazy-resolved, no circular imports |
+| **Pydantic V2** | `ZCoreCoreSettings` inherits `pydantic_settings.BaseSettings` |
+| **Lazy Resolution** | `settings.DATABASE_URL` — Resolved from IoC container on first access |
+| **Env Switching** | `ENV_FILE=.env.test` — Dynamic `.env` file selection |
+
+[Full Config Documentation](features/infrastructure/config.md)
+
+---
+
+### CLI Scaffolding
+
+| Command | Description |
+|---|---|
+| `zc init <name>` | Create new project with secure `.env` and directory structure |
+| `zc startapp <name>` | Scaffold a domain module (model, schema, repo, service, router, plugin) |
+| `zc run` | Launch `uvicorn` with auto `PYTHONPATH` injection |
+| `zc gensecret` | Generate a cryptographically secure 64-char secret key |
+
+[Full CLI Documentation](features/infrastructure/cli.md)
+
+---
+
+### System Utilities
+
+| Function | Description |
+|---|---|
+| `json_dumps(data)` | Serialize UUID, Decimal, datetime safely |
+| `json_loads(data)` | Deserialize with enhanced type support |
+| `slugify(text)` | URL-safe slug: `"ZCore Framework!"` → `"zcore-framework"` |
+| `validate_json_schema(data, schema)` | Validate against Draft-7, raises `ValidationError` on failure |
+
+[Full Utils Documentation](features/infrastructure/utils.md)
+
+---
+
+## Data & Transactions
+
+### Database Manager
+
+| Concept | Usage |
+|---|---|
+| **init_app** | `db_manager.init_app(db_url="postgresql+asyncpg://...")` |
+| **SQLite Bypass** | Auto-ignores `pool_size`/`max_overflow` for SQLite connections |
+| **Session Context** | `async with db_manager.session() as session:` — Auto rollback on exception |
+| **Engine Access** | `db_manager._engine` — Raw `AsyncEngine` for migrations |
+
+[Full DB Documentation](features/database/db.md)
+
+---
+
+### Repository Pattern
+
+| Concept | Usage |
+|---|---|
+| **BaseRepository** | `class ProductRepo(BaseRepository[Product, CreateSchema, UpdateSchema])` |
+| **Read/Write Mixins** | `get()`, `create()`, `update()`, `delete()`, `get_by_ids()` |
+| **Exist Optimization** | `exists(**filters)` — Uses `SELECT 1` for fast boolean check |
+| **Search** | `search(SearchRequest)` — Delegates to `SearchEngine` |
+
+[Full Repository Documentation](features/database/repository.md)
+
+---
+
+### Business Services
+
+| Concept | Usage |
+|---|---|
+| **BaseService** | `class ProductService(BaseService[Product, CreateSchema, UpdateSchema])` |
+| **Safe Commit** | `await self._safe_commit()` — Context-aware, skips if UoW is active |
+| **Lifecycle Hooks** | `after_create(obj)`, `after_update(obj)`, `after_delete(obj)` — Override for side effects |
+
+[Full Service Documentation](features/database/service.md)
+
+---
+
+### Unit of Work
+
+| Concept | Usage |
+|---|---|
+| **UoW** | `async with UnitOfWork(db_manager) as uow:` — Atomic transaction boundary |
+| **Post-Commit Events** | `uow.add_event("event.name", **kwargs)` — Dispatched only after successful commit |
+| **Isolation** | Multiple repos share the same transaction within a UoW block |
+
+[Full UoW Documentation](features/database/uow.md)
+
+---
+
+### Database Events
+
+| Concept | Usage |
+|---|---|
+| **dispatch_db_event** | `dispatch_db_event("event.name", session, **kwargs)` — Error-isolated propagation |
+| **Registration** | `register_db_event_dispatcher(dispatcher)` — Bridges DB events to app-level dispatcher |
+
+[Full DB Events Documentation](features/database/db-events.md)
+
+---
+
+### Pagination Engine
+
+| Concept | Usage |
+|---|---|
+| **Cursor Pagination** | `CursorParams(cursor="base64string", size=20)` — Keyset-based, stable under writes |
+| **Offset Pagination** | `PageNumberParams(page=1, size=20)` — Standard offset/limit |
+| **Base64 Encoding** | Cursor is Base64-encoded for safe URL transport |
+| **Count Optimization** | `order_by(None).count()` — Strips ordering for faster count queries |
+
+[Full Pagination Documentation](features/database/pagination.md)
+
+---
+
+### Dynamic Search Engine
+
+| Concept | Usage |
+|---|---|
+| **SearchRequest** | `SearchRequest(filters={...}, sorts=[...], eager_loads=[...])` |
+| **JSON Query Builder** | Translates nested JSON filters to safe SQL WHERE clauses |
+| **Depth Protection** | `max_depth` and `max_filters` — Prevents DoS via deeply nested queries |
+| **Wildcard Escaping** | Auto-escapes `%` and `_` in LIKE patterns |
+
+[Full Search Documentation](features/database/search.md)
+
+---
+
+## Security & Shielding
+
+### Thread-Safe Context
+
+| Concept | Usage |
+|---|---|
+| **request_context** | `with request_context(user_id=..., fields={"products.cost"}):` |
+| **get_current_user_id()** | Returns `uuid.UUID` from active context |
+| **get_restricted_fields()** | Returns `frozenset` of restricted field paths |
+| **Token Reset** | Context uses `contextvars.Token` for safe restoration |
+
+[Full Context Documentation](features/security/context.md)
+
+---
+
+### Cryptographic Protocols
+
+| Concept | Usage |
+|---|---|
+| **Password Hashing** | `get_password_hash("pw")` — Argon2id (64MB memory, 3 iterations, 4 threads) |
+| **Token Creation** | `create_token(data={"sub": id, "scopes": [...]})` — Auto-detects HS256 vs RS256 |
+| **Production Guard** | Fatal `RuntimeError` if `SECRET_KEY` is default in production |
+| **Asymmetric Detection** | Auto-switches to RS256 if `JWT_PRIVATE_KEY`/`JWT_PUBLIC_KEY` are set |
+
+[Full Security Documentation](features/security/security.md)
+
+---
+
+### API Routing Mechanics
+
+| Concept | Usage |
+|---|---|
+| **ZCoreAPIRoute** | `APIRouter(route_class=ZCoreAPIRoute)` — Custom route handler |
+| **Schema Exposure** | `?schema=true` — Returns context-pruned JSON-Schema |
+| **Vary Header** | Auto-appends `Vary: Authorization, Cookie` on pruned responses |
+| **Response Preservation** | Custom `response_class` is never silently overwritten |
+
+[Full API Router Documentation](features/security/api-router.md)
+
+---
+
+### Zchema Security & Schema Pruning
+
+| Concept | Usage |
+|---|---|
+| **Zchema** | `class ProductBase(Zchema): __model__ = "products"` — Single schema, context-aware |
+| **Input Pruning** | `model_validator(mode="before")` — Prevents mass assignment |
+| **Output Pruning** | `model_serializer(mode="wrap")` — Strips restricted fields from responses |
+| **Schema Pruning** | `__get_pydantic_json_schema__` — Hides restricted fields from `?schema=true` |
+
+[Full Zchema Documentation](features/security/zchema.md)
+
+---
+
+### Centralized Exception Handler
+
+| Exception | HTTP Code | Usage |
+|---|---|---|
+| `EntityNotFound` | 404 | `raise EntityNotFound("User not found")` |
+| `DuplicateEntity` | 409 | `raise DuplicateEntity("Email already exists")` |
+| `AuthError` | 401 | `raise AuthError("Invalid credentials")` |
+| `ForbiddenError` | 403 | `raise ForbiddenError("Insufficient permissions")` |
+| `ValidationError` | 400 | `raise ValidationError("Invalid input")` |
+
+All exceptions return `ResponseWrapper` envelope with `error_type` and optional `payload`.
+
+[Full Exceptions Documentation](features/security/exceptions.md)
+
+---
+
+## Advanced Ecosystem
+
+### Distributed Caching
+
+| Concept | Usage |
+|---|---|
+| **BaseCache** | `cache = BaseCache[ProductOut](prefix="products")` |
+| **Get with Validation** | `await cache.get("key", target_type=ProductOut)` — Auto Pydantic validation |
+| **Set with TTL** | `await cache.set("key", value, ttl=300)` |
+| **Fallback** | Redis → local `TTLLRUCache` (maxsize=1000) on failure |
+| **Eviction Loop** | Background task runs every 60s, purges expired local entries |
+
+[Full Cache Documentation](features/ecosystem/cache.md)
+
+---
+
+### File Storage & Security
+
+| Concept | Usage |
+|---|---|
+| **LocalStorageProvider** | `LocalStorageProvider(base_path="./uploads", validators=[...])` |
+| **Validators** | `FileExtensionValidator`, `MaxFileSizeValidator`, `SafeMimeTypeValidator` |
+| **Magic Bytes** | Reads first 2048 bytes, blocks PHP/HTML/MZ/Shebang patterns |
+| **UUID Truncation** | Filenames use first 15 chars of `uuid4()` — collision-resistant |
+| **Path Traversal Guard** | `is_relative_to()` check prevents `../../etc/passwd` attacks |
+
+[Full Storage Documentation](features/ecosystem/storage.md)
+
+---
+
+### WebSocket Streaming
+
+| Concept | Usage |
+|---|---|
+| **StreamManager** | `manager = StreamManager()` — Per-user queue management |
+| **Subscribe** | `async with manager.subscription(user_id) as queue:` — Context manager with auto cleanup |
+| **Publish** | `await manager.publish(user_id, {"type": "update", ...})` — Redis PubSub + local fallback |
+| **Queue Protection** | `asyncio.Queue(maxsize=100)` — Overflowing queues are silently dropped |
+| **Horizontal Scale** | All nodes share Redis PubSub pattern `stream:user:*` |
+
+[Full Stream Documentation](features/ecosystem/stream.md)
+
+---
+
+## Quick CLI Reference
+
+```bash
+zc init my_project          # Create new project
+zc startapp inventory       # Scaffold domain module
+zc run                      # Start dev server
+zc gensecret                # Generate secure secret key
+zc --help                   # List all commands
 ```
 
-👉 [Configuration Reference Documentation](features/infrastructure/config.md)
-
 ---
 
-### 3. Application Entry (`main.py`)
-Bootstrapping boilerplate that brings together logging, dbs, routers, plugins, and the core lifecycle kernel.
+## Common Patterns
+
+### Scaffold a Full CRUD Module
 
 ```python
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from fastapi import FastAPI
-from zcore import Kernel, settings
-from zcore.web import RequestLogMiddleware, ScopedDependencyMiddleware
-from zcore.exceptions import app_exception_handler, AppException
-from zcore.db import db_manager, register_db_event_dispatcher
-from zcore.logging import setup_logging
-
-setup_logging()
-db_manager.init_app(db_url=settings.DATABASE_URL)
-
-kernel = Kernel()
-register_db_event_dispatcher(kernel.dispatcher)
-
-app = FastAPI(title=settings.PROJECT_NAME, lifespan=kernel.lifespan)
-app.add_middleware(RequestLogMiddleware)
-app.add_middleware(ScopedDependencyMiddleware)
-app.add_exception_handler(AppException, app_exception_handler)
-
-kernel.setup(app)
-```
-
-👉 [Application Entry Reference Documentation](features/infrastructure/main.md)
-
----
-
-## Block 2: 🧱 Modular App Architecture
-
-### 4. DB Infrastructure (`db`)
-Coordinates the database connection engine and registers table metadata for permission checking.
-
-```python
-from zcore.db import db_manager
-
-# Initialize pool tuning and SQL query logging options
-db_manager.init_app(db_url="sqlite+aiosqlite:///dev.db", pool_size=5, max_overflow=10, echo=True)
-```
-
-👉 [Database Infrastructure Reference Documentation](features/database/db.md)
-
----
-
-### 5. Database Model (`db models`)
-SQLAlchemy 2.0 declarative database model mapping, using UUIDv4 as the default identifier.
-
-```python
-import uuid
-from sqlalchemy import String, Numeric
-from sqlalchemy.orm import Mapped, mapped_column
-from zcore.db.setup import Base
-
+# 1. Model
 class Product(Base):
     __tablename__ = "products"
-    
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    name: Mapped[str] = mapped_column(String(100), nullable=False)
-    price: Mapped[float] = mapped_column(Numeric(10, 2), nullable=False)
-```
+    name: Mapped[str]
 
-👉 [Database Model Reference Documentation](learn/1-db.md)
-
----
-
-### 6. Pydantic Schemas (`schemas`)
-Pydantic V2 payload definitions that enforce data type casting and load attributes directly from database mappers. All schemas should inherit from `Zchema` and declare a `__db_name__` for domain-bound security.
-
-```python
-from zcore import Zchema
-from pydantic import Field, ConfigDict
-
-class ProductResponse(Zchema):
-    __db_name__ = "product"
-    id: str
+# 2. Schema
+class ProductBase(Zchema):
+    __model__ = "products"
     name: str
-    
-    # Enables automatic mapping from database models
-    model_config = ConfigDict(from_attributes=True)
-```
 
-👉 [Schemas Reference Documentation](learn/2-schemas.md)
+# 3. Repository
+class ProductRepository(BaseRepository[Product, ProductBase, ProductBase]):
+    def __init__(self, db: AsyncSession): super().__init__(model=Product, db=db)
 
----
-
-### 7. Repository Layer (`repository`)
-Data access layer that provides standard CRUD query operations directly with zero SQL boilerplate.
-
-```python
-from zcore.db.repository import BaseRepository
-from zcore.db.setup import SessionDep
-from .models import Product
-
-class ProductRepository(BaseRepository[Product, ProductCreate, ProductUpdate]):
-    def __init__(self, db: SessionDep):
-        super().__init__(model=Product, db=db)
-```
-
-👉 [Repository Layer Reference Documentation](features/database/repository.md)
-
----
-
-### 8. Business Service (`service`)
-The business logic layer, featuring integrated dependency injection, `on_*` persistence methods, and pre/post lifecycle hooks.
-
-```python
-from zcore.service.base import BaseService
-from zcore.kernel.di import Inject
-from .repositories import ProductRepository
-from .models import Product
-
-class ProductService(BaseService[Product, ProductCreate, ProductUpdate]):
+# 4. Service
+class ProductService(BaseService[Product, ProductBase, ProductBase]):
     def __init__(self, repository: ProductRepository = Inject(ProductRepository)):
         super().__init__(model=Product, repository=repository)
-```
 
-👉 [Business Service Reference Documentation](features/database/service.md)
-
----
-
-### 9. Routing Scaffolding (`BaseRouter`)
-A router class that automatically generates and secures all standard REST endpoints.
-
-```python
-from zcore.web import BaseRouter
-from .schemas import ProductCreate, ProductUpdate, ProductResponse
-from .services import ProductService
-from .models import Product
-
-class ProductRouter(BaseRouter[ProductCreate, ProductUpdate]):
+# 5. Router (auto-generates 7 endpoints)
+class ProductRouter(BaseRouter[ProductBase, ProductBase]):
     model = Product
-    create_schema = ProductCreate
-    update_schema = ProductUpdate
-    schema_out = ProductResponse
+    create_schema = ProductBase
+    update_schema = ProductBase
+    schema_out = ProductBase
     service = ProductService
     prefix = "/products"
 ```
 
-👉 [Routing Scaffolding Reference Documentation](learn/5-router.md)
-
----
-
-### 10. Plugin System (`Plugin`)
-Packages modular components to handle initialization logic and coordinate application lifecycles.
+### Register Exception Handler
 
 ```python
-from fastapi import FastAPI
-from zcore.kernel import Plugin
-
-class ProductPlugin(Plugin):
-    name = "products"
-    version = "1.0.0"
-    dependencies = []
-
-    def setup(self, app: FastAPI) -> None:
-        app.include_router(product_router)
-        
-    async def on_startup(self) -> None:
-        pass # Handle startup tasks (e.g. warming caches)
+from zcore.exceptions import AppException, app_exception_handler
+app.add_exception_handler(AppException, app_exception_handler)
 ```
 
-👉 [Plugin System Reference Documentation](features/infrastructure/kernel.md)
-
----
-
-### 11. Framework Core (`engine - kernel`)
-The central engine that registers, topologically sorts, and triggers application modules during server startup.
+### Use SessionDep
 
 ```python
-from zcore import Kernel
-from products.plugin import ProductPlugin
+from zcore.db import SessionDep
 
-kernel = Kernel()
-# Register the plugin to include its modules during the startup phase
-kernel.add_plugin(ProductPlugin())
+@router.get("/items")
+async def list_items(db: SessionDep):
+    result = await db.execute(select(Item))
+    return result.scalars().all()
 ```
 
-👉 [Framework Core Reference Documentation](features/infrastructure/kernel.md)
-
----
-
-## Block 3: 🔌 DI, Middlewares & Utilities
-
-### 12. Dependency Injection (`di`)
-Registers and resolves classes. It supports Scoped, Transient, and Singleton lifecycles.
+### Dispatch an Event
 
 ```python
-from zcore.kernel.di import container, Inject
-
-# Register singleton
-container.register_singleton(IMailer, SendGridMailer())
-
-# Register scoped class (request lifetime)
-container.register_scoped(IOrderRepository, SQLOrderRepository)
-
-# Inject dependencies directly into constructors
-def __init__(self, repo: IOrderRepository = Inject(IOrderRepository)):
-    self.repo = repo
+await dispatcher.dispatch("user.registered", user=user, timestamp=now)
 ```
 
-👉 [Dependency Injection Reference Documentation](features/infrastructure/di.md)
-
----
-
-### 13. Kernel Events (`kernel - event`)
-Subscribes to and dispatches events asynchronously, running listeners concurrently on the active event loop.
+### Use Unit of Work
 
 ```python
-from zcore.kernel.events import EventDispatcher
-
-# Subscribe a listener to an event key
-dispatcher.subscribe("order.created", send_invoice_email)
-
-# Dispatch an event concurrently across all registered listeners
-await dispatcher.dispatch("order.created", order_id="ord_102")
+async with UnitOfWork(db_manager) as uow:
+    user = await user_repo.create(data)
+    await uow.add_event("user.registered", user_id=user.id)
+# Event dispatched only after successful commit
 ```
-
-👉 [Kernel Events Reference Documentation](features/infrastructure/events.md)
 
 ---
 
-### 14. ASGI Middlewares (`middleware`)
-Configures tracing and sets up request-scoped memory environments to isolate concurrent requests.
-
-```python
-# Registered in main.py to handle request tracking and dependency isolation
-app.add_middleware(RequestLogMiddleware)
-app.add_middleware(ScopedDependencyMiddleware)
-```
-
-👉 [ASGI Middlewares Reference Documentation](features/infrastructure/middleware.md)
-
----
-
-### 15. Utilities (`utils`)
-Serializes non-primitive types and validates structures using JSON standard validation rules.
-
-```python
-from zcore.utils.helpers import json_dumps
-from zcore.utils.jsonschema import validate_json_schema
-
-# Serialize UUIDs, Decimals, and Dates cleanly
-serialized_payload = json_dumps({"id": uuid.uuid4(), "amount": Decimal("10.50")})
-
-# Validate data structures against a Draft-7 schema
-validate_json_schema(data={"age": 20}, schema={"properties": {"age": {"type": "integer"}}})
-```
-
-👉 [Utilities Reference Documentation](features/infrastructure/utils.md)
-
----
-
-## Block 4: 📊 Transactions, Search & Pagination
-
-### 16. Multi-Repo Transactions (`uow`)
-Executes transactional writes across multiple repositories in a single block, ensuring atomic changes.
-
-```python
-from zcore.db.uow import UnitOfWork
-
-# Wrap multiple changes in a single database transaction
-async with UnitOfWork(session, dispatcher) as uow:
-    await order_repo.create(order_schema)
-    await product_repo.update(product_id, update_schema)
-    uow.register_event("checkout.completed", {"order_id": 102})
-```
-
-👉 [Multi-Repo Transactions Reference Documentation](features/database/uow.md)
-
----
-
-### 17. Database Events (`db events`)
-Signals database updates and dispatches them asynchronously, keeping transaction execution non-blocking.
-
-```python
-from zcore.db.events import dispatch_db_event
-
-# Safely publish database events across the system
-await dispatch_db_event("db.product.created", {"id": "prod_102"})
-```
-
-👉 [Database Events Reference Documentation](features/database/db-events.md)
-
----
-
-### 18. DB Pagination (`pagination`)
-Loads database records using either Offset-based pagination or keyset Cursor pagination.
-
-```python
-from zcore.db.pagination import PageNumberParams, CursorParams
-
-# Offset parameters
-offset_params = PageNumberParams(page=1, size=20, sort_by="price", sort_order="desc")
-
-# Keyset parameters (using base64 encoded cursor positions)
-cursor_params = CursorParams(cursor="eyJ2YWx1ZSI6MjAsImlkIjoyfQ==", size=25)
-```
-
-👉 [DB Pagination Reference Documentation](features/database/pagination.md)
-
----
-
-### 19. Dynamic Search (`search`)
-Builds complex database queries dynamically, validating paths and converting types securely.
-
-```json
-{
-  "filters": [
-    { "field": "stock", "op": "gt", "value": 10 },
-    { "op": "or", "items": [
-        { "field": "name", "op": "ilike", "value": "widget" },
-        { "field": "price", "op": "le", "value": 100.00 }
-    ]}
-  ],
-  "sort": [{ "field": "price", "order": "asc" }],
-  "size": 15,
-  "page": 1
-}
-```
-
-👉 [Dynamic Search Reference Documentation](features/database/search.md)
-
----
-
-## Block 5: 🛡️ Security, Context & Response Projection
-
-### 20. Context Management (`context`)
-Stores user and field restriction parameters securely across async execution blocks. Restricted fields use the `{db_name}.{field}` syntax for domain-bound security.
-
-```python
-from zcore.context import request_context, get_current_user_id
-
-# Isolate user context and field restrictions for a specific block
-with request_context(user_id=active_user_id, fields=["user.hashed_password"]):
-    # Retrieve the active user ID within any nested function block
-    current_user = get_current_user_id()
-```
-
-👉 [Context Management Reference Documentation](features/security/context.md)
-
----
-
-### 21. Cryptographic Security (`security`)
-Hashes passwords using the Argon2id algorithm and issues cryptographically signed JWT credentials.
-
-```python
-from zcore.security import get_password_hash, create_token
-
-# Generate a secure Argon2id password hash
-hashed_password = get_password_hash("raw-password-string")
-
-# Issue a new signed JWT access token containing claims
-token = create_token(data={"sub": "user_id_102", "role": "admin"})
-```
-
-👉 [Cryptographic Security Reference Documentation](features/security/security.md)
-
----
-
-### 22. Custom Route Mechanics (`api-router`)
-Enables custom routing rules, including dynamic schema exposure and native Zchema-based security.
-
-```python
-# Enables /route/?schema=true queries on the endpoint
-expose_schemas = True
-```
-
-👉 [Custom Route Mechanics Reference Documentation](features/security/api-router.md)
-
----
-
-### 23. Output Projection & Security (`Zchema & response`)
-ZCore's `Zchema` base class automatically prunes restricted fields across schema generation, input validation, and response serialization — all without web-layer middleware.
-
-```python
-from zcore import Zchema
-from zcore.web.response import ResponseWrapper
-
-class EmployeeResponse(Zchema):
-    __db_name__ = "employee"
-    id: str
-    name: str
-    salary: float  # Automatically pruned for non-admin users
-
-# Package responses in the standardized JSON envelope
-response = ResponseWrapper.success_response(data=employee_data, message="Success")
-```
-
-👉 [Zchema Security Reference Documentation](features/security/zchema.md)
-
----
-
-### 24. Global Exceptions (`exceptions`)
-Standardizes custom application exception mappings and converts errors into clean JSON error responses.
-
-```python
-from zcore.exceptions.base import ValidationError, EntityNotFound
-
-# Raise to return an HTTP 400 Bad Request response containing metadata
-raise ValidationError(message="Validation failed", payload={"field": "email"})
-
-# Raise to return an HTTP 404 Not Found response
-raise EntityNotFound(message="Resource not found")
-```
-
-👉 [Global Exceptions Reference Documentation](features/security/exceptions.md)
-
----
-
-## Block 6: 🌐 Advanced Ecosystem Services
-
-### 25. Hybrid Caching (`cache`)
-Caches data using local in-memory storage, falling back cleanly to Redis connections if available.
-
-```python
-from zcore.cache import BaseCache
-
-cache = BaseCache[UserSchema](prefix="users")
-
-# Set cache key
-await cache.set(key="user_102", value=user_data, ttl=3600)
-
-# Retrieve cached payload using Pydantic schema validation
-cached_user = await cache.get("user_102", target_type=UserSchema)
-```
-
-👉 [Hybrid Caching Reference Documentation](features/ecosystem/cache.md)
-
----
-
-### 26. File Storage (`storage`)
-Manages file uploads securely, protecting against path traversal and validating files based on their Magic Bytes.
-
-```python
-from zcore.storage.local import LocalStorageProvider
-from zcore.storage.validators import SafeMimeTypeValidator
-
-# Initialize local storage provider with image magic-byte security validators
-storage = LocalStorageProvider(
-    base_path="./uploads",
-    validators=[SafeMimeTypeValidator(allowed_mimes=["image/png", "image/jpeg"])]
-)
-
-# Upload and save file safely
-saved_path = await storage.upload(file, folder="profile_pictures")
-```
-
-👉 [File Storage Reference Documentation](features/ecosystem/storage.md)
-
----
-
-### 27. Event Streaming (`stream`)
-Streams real-time updates over WebSocket channels, using Redis PubSub to route events across instances.
-
-```python
-from zcore.web.streams import StreamManager
-
-stream_manager = StreamManager()
-
-# Stream real-time events to a connected client
-async with stream_manager.subscription(user_id) as queue:
-    while True:
-        event = await queue.get()
-        await websocket.send_json(event)
-```
-
-👉 [Event Streaming Reference Documentation](features/ecosystem/stream.md)
-
----
-
-!!! tip "Fast Scaffold Lookup"
-    Use the `zc startapp <app_name> -t` CLI command to quickly generate templates pre-configured with standard models, schemas, repositories, services, and routers.
+!!! tip "Full Documentation"
+    Each section above links to its complete documentation page. For the tutorial, see [Learn (Tutorial)](learn/overview/). For practical recipes, see [How-To Guides](how-to/auth-setup/).

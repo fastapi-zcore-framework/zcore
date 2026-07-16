@@ -1,119 +1,104 @@
-# 🔔 Kernel Events System
+# Asynchronous Event Orchestration
 
-ZCore provides a modest and practical event system managed by the `EventDispatcher`. It enables "decoupled communication," which is a fancy way of saying it allows different parts of your application to talk to each other without being directly connected. This makes your code easier to maintain and extend.
-
----
-
-## 🏗️ The Event Dispatcher
-
-The central `EventDispatcher` acts as a "switchboard." It keeps track of who is interested in certain events and notifies them when those events occur. It is registered as a global singleton, so you can access it from anywhere in your application.
-
-### 📋 Core Methods
-
-| Method | Purpose |
-| :--- | :--- |
-| 📥 `subscribe` | Registers a function (listener) to wait for a specific event key. |
-| 📤 `dispatch` | Triggers an event and executes all registered listeners. |
-| 🔌 `unsubscribe` | Removes a listener so it no longer receives updates. |
+Loosely coupled communication with concurrent, non-blocking execution and automated failure isolation.
 
 ---
 
-## 🚀 Asynchronous Concurrent Execution
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Infrastructure Engine</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Core</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>asyncio / inspect</strong>
+  </div>
+</div>
 
-When you trigger an event, ZCore doesn't just run the listeners one by one in a slow line. It intelligently analyzes each listener:
+## The Challenge
+In complex applications, triggering side effects often leads to **Tightly Coupled Spaghetti**. If a `UserService` needs to send a welcome email, notify a Slack channel, and initialize a loyalty account, it must import and call all those services directly. This results in:
+1.  **Testing Fragility:** To test a user registration, you must mock the email, slack, and loyalty services.
+2.  **Performance Bottlenecks:** Executing side effects sequentially increases the response time of the primary request.
+3.  **Failure Propagation:** If the email server is down and raises an exception, the entire user registration fails, even if the database write was successful.
 
-1.  **Synchronous Handlers:** Executed immediately in order.
-2.  **Asynchronous Handlers:** Grouped together and executed **concurrently** (at the same time) using `asyncio.gather`. This ensures that one slow task (like sending an email) doesn't block the rest of your application.
+## The ZCore Elegance
+The `EventDispatcher` enables a "Fire and Forget" architecture. Services simply dispatch an event, and the dispatcher handles the execution of all subscribers concurrently. Crucially, it isolates failures—an error in one listener will not stop other listeners or the main execution flow.
 
-```mermaid
-graph TD
-    Dispatch[dispatch_event] -->|Lookup| Reg[Subscriber Registry]
-    Reg -->|Identify Types| Split{Handler Type?}
-    Split -->|Async| AsyncList[Concurrent Pool]
-    Split -->|Sync| SyncList[Sequential Execution]
-    
-    subgraph Async Pool [Non-Blocking Pool]
-        AsyncList -->|asyncio.gather| Task1[Task 1]
-        AsyncList -->|asyncio.gather| Task2[Task 2]
-    end
+=== "ZCore Event Dispatching"
+        :::python
+        from zcore import Inject, EventDispatcher
 
-    Task1 --> Result[Compiled Results]
-    Task2 --> Result
-    SyncList --> Result
-```
+        class UserService:
+            def __init__(self, dispatcher: EventDispatcher = Inject(EventDispatcher)):
+                self.dispatcher = dispatcher
 
----
+            async def register_user(self, schema):
+                # ... business logic ...
+                user = await self.repo.create(schema)
+                
+                # Dispatch and let the dispatcher handle the rest
+                await self.dispatcher.dispatch("user.registered", user=user)
+                return user
 
-## 🛡️ Fault Tolerance & Isolation
+        # Subscribers are isolated in their own modules
+        @dispatcher.subscribe("user.registered")
+        async def send_welcome_email(user):
+            await email_service.send(user.email, "Welcome!")
 
-A critical part of ZCore's engineering is **Fault Isolation**. In a modest system, if one "listener" fails (e.g., a notification service is down), it should not crash the entire process or prevent other listeners from working.
-
-ZCore uses a "Safe-Execute" pattern. Every listener is isolated so that errors are caught and logged without stopping the dispatcher:
-
-```python
-# Internal safety mechanism
-results = await asyncio.gather(*async_tasks, return_exceptions=True)
-for res in results:
-    if isinstance(res, Exception):
-        # The error is logged, but execution continues
-        logger.error(f"Event listener failed: {res}")
-```
-
-| Feature | Behavior | Benefit |
-| :--- | :--- | :--- |
-| **Error Trapping** | Caught via `return_exceptions=True`. | One failing task won't crash the others. |
-| **Traceback Logging** | Full context recorded in logs. | Easy to debug without stopping production. |
-| **Result Aggregation** | Returns results from all successful tasks. | Predictable feedback for the dispatcher. |
-
----
-
-## 💻 Practical Usage
-
-### 1. Subscribing to an Event
-We suggest registering your event listeners inside your plugin's `on_startup` hook. This ensures they are ready as soon as the server starts.
-
-```python
-from zcore.kernel import Plugin
-from zcore.kernel.events import EventDispatcher
-from zcore.kernel.di import Inject
-
-async def send_welcome_email(user_id: str) -> None:
-    # Logic to send email...
-    print(f"📧 Welcome email sent to {user_id}")
-
-class NotificationPlugin(Plugin):
-    name = "notifier"
-    
-    async def on_startup(self) -> None:
-        # Resolve dispatcher via DI and subscribe
-        dispatcher = Inject(EventDispatcher)()
-        dispatcher.subscribe("user.registered", send_welcome_email)
-```
-
-### 2. Dispatching an Event
-You can trigger an event from any service or repository.
-
-```python
-from zcore.kernel.events import EventDispatcher
-from zcore.kernel.di import Inject
-
-async def register_user(user_data):
-    # ... logic to save user ...
-    
-    # Notify the system that a user was registered
-    dispatcher = Inject(EventDispatcher)()
-    await dispatcher.dispatch("user.registered", user_id="user_123")
-```
+=== "FastAPI Manual Coupling"
+        :::python
+        # Logic is tightly bound and executed sequentially
+        class UserService:
+            async def register_user(self, schema):
+                user = await self.repo.create(schema)
+                
+                # 1. Sequential execution (Slow)
+                # 2. Tight coupling (Hard to test)
+                # 3. Direct failure risk (If email fails, registration fails)
+                try:
+                    await self.email_service.send(user.email, "Welcome!")
+                    await self.slack_service.notify(f"New user: {user.id}")
+                except Exception as e:
+                    # Manual error handling required for every side effect
+                    logger.error(e)
+                
+                return user
 
 ---
 
-## 💡 Engineering Insights
+## Dispatcher Workflow
+The `EventDispatcher` orchestrates a hybrid execution path for both synchronous and asynchronous listeners.
 
-!!! tip "💡 Non-Blocking by Design"
-    Since events are often used for "side-effects" (like logging or analytics), ZCore ensures they are non-blocking. Your main business logic continues to run while the event listeners work in the background.
+<p align="center">
+  <img src="https://raw.githubusercontent.com/fastapi-zcore-framework/zcore/master/docs/assets/events.png" 
+  alt="Dispatcher Workflow" width="700">
+</p>
 
-!!! info "🛡️ Clean Unsubscription"
-    Always remember to `unsubscribe` if you are creating dynamic listeners that aren't tied to the global application lifecycle. For standard plugins, ZCore manages most of this for you.
+---
 
-!!! warning "🧹 Payload Consistency"
-    The dispatcher forwards all arguments (`*args`, `**kwargs`) to the listeners. Make sure your listener functions accept exactly the same parameters that the dispatcher sends to avoid `TypeError` errors.
+## Boundaries & Integration
+The Event System is an optional orchestration bus that works alongside standard Python calls.
+
+*   **Singleton Registration:** The `Kernel` automatically registers the `EventDispatcher` as a singleton in the DI container. Any component can access it via `Inject(EventDispatcher)` [kernel/engine.py].
+*   **Safe for Sync/Async:** You can subscribe with both standard `def` functions and `async def` coroutines. The dispatcher uses `inspect.iscoroutinefunction` to decide how to execute them [kernel/events.py].
+*   **Bypass:** If you require a strict, sequential execution where the primary operation *must* fail if a side effect fails, do not use the dispatcher. Instead, call the service methods directly or use a `UnitOfWork` for transactional integrity.
+
+---
+
+## Under-the-Hood Spec
+
+### 1. Concurrent Execution Gather
+When `dispatch()` is called, ZCore gathers all asynchronous subscribers and executes them concurrently using `asyncio.gather` [kernel/events.py]. This ensures that multiple side effects (like sending an email and hitting a webhook) do not increase the total response time of the request.
+
+### 2. Failure Isolation (`return_exceptions=True`)
+The dispatcher is designed for stability. By using `return_exceptions=True` inside the gather call, ZCore ensures that if one handler raises an exception, the other handlers continue to run [kernel/events.py]. Exceptions are captured, logged via `structlog`, and the dispatcher returns `None` for the failed task instead of crashing the process.
+
+### 3. Dynamic Handler Inspection
+The dispatcher uses the `inspect` module to verify handlers during the dispatch phase [kernel/events.py]. It wraps the execution in a `try/except` block even during the "preparation" phase, catching errors that might occur if a handler is improperly configured or has an invalid signature.
+
+!!! info "Transactional Events"
+    For database-related events, use the `UnitOfWork`. It buffers events and only calls `dispatcher.dispatch` **after** the database transaction has successfully committed [db/uow.py].

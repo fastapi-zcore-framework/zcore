@@ -1,87 +1,92 @@
-# 📋 Step 2: Pydantic Schemas
+# Context-Aware Data Shielding
 
-While the database model represents how data is **stored**, Pydantic schemas represent how data is **transported**. This modest separation ensures that internal database logic remains decoupled from the external API contract, providing a safety buffer for your data.
-
-Open `products/schemas.py` and define the following contracts:
-
-```python
-import uuid
-from decimal import Decimal
-from typing import Optional
-from pydantic import Field, ConfigDict
-from zcore import Zchema
-
-class ProductBase(Zchema):
-    """Shared attributes validated across incoming and outgoing product requests."""
-    __db_name__ = "product"
-    name: str = Field(..., min_length=2, max_length=120, description="Product retail name")
-    price: Decimal = Field(..., ge=0.00, max_digits=10, decimal_places=2, description="Product price")
-    stock: int = Field(default=0, ge=0, description="Available stock inventory")
-
-class ProductCreate(ProductBase):
-    """Schema for validating new product creation payloads."""
-    pass
-
-class ProductUpdate(Zchema):
-    """Schema for validating product update payloads (supports partial patches)."""
-    __db_name__ = "product"
-    name: Optional[str] = Field(None, min_length=2, max_length=120)
-    price: Optional[Decimal] = Field(None, ge=0.00, max_digits=10, decimal_places=2)
-    stock: Optional[int] = Field(None, ge=0)
-
-class ProductResponse(ProductBase):
-    """Schema representing the serialized API response payload."""
-    id: uuid.UUID
-
-    model_config = ConfigDict(from_attributes=True)
-```
+Define one schema; ZCore handles input pruning and output masking based on active security context.
 
 ---
 
-## 🛠️ Schema Responsibility Matrix
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Schema Wrapper</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Highly Recommended</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Pydantic V2 / ContextVars</strong>
+  </div>
+</div>
 
-To help understand when to use each schema, refer to this breakdown:
+## The Challenge
+Modern APIs often suffer from two major data integrity issues:
+1.  **Mass Assignment:** An attacker sends `{"is_admin": true}` in a registration payload, and the backend blindly persists it.
+2.  **Data Leakage:** Sensitive fields (like `internal_notes` or `secret_cost`) are accidentally included in a public GET response.
 
-| Schema Name | Direction | Primary Responsibility |
-| :--- | :--- | :--- |
-| 📦 `ProductCreate` | **Inbound** | Validates that name, price, and stock exist and meet constraints. |
-| 🛠️ `ProductUpdate` | **Inbound** | Allows clients to update only specific fields (Optionality). |
-| 📤 `ProductResponse` | **Outbound** | Formats the data for the client and includes the generated `id`. |
+To solve this in raw FastAPI, developers typically create a "Schema Explosion"—multiple Pydantic models for every single operation: `UserCreate`, `UserUpdate`, `UserPublicResponse`, `UserAdminResponse`, and `UserOwnerResponse`. This leads to massive maintenance overhead and fragile code.
+
+## The ZCore Elegance
+The `Zchema` class eliminates schema explosion. By linking a schema to its database `__model__` name, ZCore automatically cross-references the active `restricted_fields` in the current context. If a field is restricted, ZCore silently prunes it from incoming payloads and masks it in outgoing responses—all using a single model definition.
+
+=== "ZCore Unified Zchema"
+        :::python
+        from zcore import Zchema
+
+        class ProductSchema(Zchema):
+            __model__ = "products" # Links to Product.__tablename__
+            
+            name: str
+            price: float
+            secret_cost: float | None = None # Restricted field
+
+        # If "products.secret_cost" is in restricted_fields:
+        # 1. POST input: 'secret_cost' is silently stripped.
+        # 2. GET response: 'secret_cost' is masked from JSON output.
+        # 3. ?schema=true: 'secret_cost' is removed from JSON-Schema.
+
+=== "FastAPI Schema Explosion"
+        :::python
+        # You are forced to maintain 3+ models for the same entity
+        class ProductBase(BaseModel):
+            name: str
+            price: float
+
+        class ProductCreate(ProductBase):
+            pass # No secret_cost allowed here
+
+        class ProductResponsePublic(ProductBase):
+            id: uuid.UUID
+
+        class ProductResponseAdmin(ProductResponsePublic):
+            secret_cost: float # Only for admins
+            
+        # In your router, you must manually select the right class:
+        if user.is_admin:
+            return ProductResponseAdmin.model_validate(product)
+        return ProductResponsePublic.model_validate(product)
 
 ---
 
-## 🔐 The `Zchema` Base Class
+## Boundaries & Integration
+ZCore provides security shielding without breaking the Pydantic ecosystem.
 
-All schemas in ZCore should inherit from `Zchema` (not directly from Pydantic's `BaseModel`). `Zchema` is a drop-in replacement that adds three layers of automatic security:
-
-| Tier | Mechanism | What It Protects |
-| :--- | :--- | :--- |
-| **1. Dynamic Schema Generation** | `__get_pydantic_json_schema__` | Removes restricted fields when clients request `?schema=true`. |
-| **2. Input Validation** | `model_validator` | Silently strips restricted fields from incoming request payloads (prevents Mass Assignment). |
-| **3. Response Pruning** | `model_serializer` | Strips restricted fields from the final outgoing JSON response. |
-
-### 🏷️ The `__db_name__` Attribute
-
-Every `Zchema` subclass must define a `__db_name__` class attribute that binds the schema to its database domain (e.g., `"product"`, `"user"`, `"order"`). This enables the security layer to resolve restricted field paths like `product.price` or `user.email` without namespace collisions across different modules.
-
-```python
-class ProductBase(Zchema):
-    __db_name__ = "product"   # <-- domain binding
-    name: str
-```
+*   **Pydantic V2 Native:** `Zchema` inherits from `pydantic.BaseModel`. All Pydantic features like `Field`, `computed_field`, and `model_validator` work out of the box.
+*   **Automatic Middleware Integration:** Pruning only works if the `ScopedDependencyMiddleware` and `request_context` are active. If used outside a ZCore request, it behaves exactly like a standard Pydantic model.
+*   **Bypass:** If you need a schema that never prunes data regardless of context, simply inherit from `pydantic.BaseModel` instead of `Zchema`.
 
 ---
 
-## 💰 Engineering Note: Why `Decimal`?
+## Under-the-Hood Spec
 
-!!! tip "💡 Precision in Financial Data"
-    In ZCore, we prefer `decimal.Decimal` over `float` for monetary values like `price`. Floating-point arithmetic can lead to rounding errors (e.g., `0.1 + 0.2` not equaling `0.3`), which is unacceptable in financial systems. Pydantic handles the conversion from JSON numbers to Python Decimals transparently.
+### 1. The `model_serializer` Wrap
+ZCore uses the Pydantic V2 `model_serializer(mode="wrap")` hook [projection.py]. When a response is being generated, ZCore intercepts the dictionary representation, identifies the relative paths of restricted fields for the specific `__model__`, and recursively removes them. This happens at the last possible moment before serialization, ensuring zero data leakage.
 
----
+### 2. Silent Input Pruning
+The `model_validator(mode="before")` hook [projection.py] acts as a guard against Mass Assignment. Before data is even validated against the model's types, ZCore prunes any keys that the active user is not allowed to touch. This prevents unauthorized fields from ever reaching your service or repository layers.
 
-## 🔗 Integration with SQLAlchemy
+### 3. Recursive Dot-Path Resolution
+Restriction paths can be specific or broad. For example, if `restricted_fields` contains `products.category.internal_id`, ZCore's internal `_prune_data` method will traverse nested dictionaries or lists within the `Product` schema to find and remove that specific deeply nested key [projection.py].
 
-!!! note "🛡️ The Role of `from_attributes`"
-    In Pydantic V2, setting `model_config = ConfigDict(from_attributes=True)` enables the schema to parse data directly from database models. Instead of manually mapping SQLAlchemy fields to dictionary keys, Pydantic reads properties directly from the ORM object, even when attributes are loaded lazily.
-
-Now that our data layers (Database and Schema) are defined, we will create the **Repository Layer** to handle SQL operations for us.
+!!! info "Security Isolation"
+    ZCore's pruning logic is strictly read-only regarding the original data object; it operates on a copy during serialization to ensure the internal application state remains intact while the external representation is secured.

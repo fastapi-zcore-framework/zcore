@@ -1,99 +1,74 @@
-# ⚙️ Configuration Management
+# Centralized Configuration Management
 
-ZCore manages application settings using a modest and practical approach based on **Pydantic Settings (v2)**. This ensures that your configurations are validated, type-safe, and driven by environment variables, while remaining easy to manage as your project grows.
-
----
-
-## 📋 Configuration Schema (`ZCoreCoreSettings`)
-
-Core settings are defined in a central schema. This class automatically parses, validates, and converts values from your system's environment variables or a `.env` file at runtime.
-
-| Variable | Default Value | Purpose |
-| :--- | :--- | :--- |
-| 🌍 `ENVIRONMENT` | `"production"` | Context: `production`, `development`, or `test`. |
-| 📛 `PROJECT_NAME` | `"ZCore App"` | Branding used in OpenAPI/Swagger metadata. |
-| 🗄️ `DATABASE_URL` | `sqlite+aiosqlite...` | Primary SQL connection string. |
-| 🧪 `DATABASE_TEST` | `sqlite+aiosqlite...` | Isolated database used during automated tests. |
-| 🏊 `POOL_SIZE` | `5` | Connection pool size (bypassed for SQLite). |
-| 🔑 `SECRET_KEY` | *(Insecure Fallback)* | Cryptographic key for signing JWTs and hashes. |
-| ⏳ `ACCESS_TOKEN...` | `30` | Access token lifespan in minutes. |
-| 📁 `STORAGE_PATH` | `"./storage"` | Local directory reserved for file uploads. |
-| 🛰️ `REDIS_URL` | `None` | Redis connection URI (if caching is active). |
+Type-safe, environment-aware settings with lazy resolution and seamless Dependency Injection integration.
 
 ---
 
-## 📂 Environmental File Loading
+<div class="zcore-meta-grid" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 2rem;">
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Type</span><br>
+    <strong>Configuration Utility</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Status</span><br>
+    <strong>Core Infrastructure</strong>
+  </div>
+  <div style="padding: 1rem; background: #18181b; border: 1px solid #27272a; border-radius: 0.375rem;">
+    <span style="color: #a1a1aa; font-size: 0.8rem; text-transform: uppercase;">Underlying Tech</span><br>
+    <strong>Pydantic Settings V2</strong>
+  </div>
+</div>
 
-The configuration manager looks for a `.env` file in your project root by default. You can easily switch between different configuration files (e.g., for testing) by setting the `ENV_FILE` environment variable.
+## The Challenge
+Managing configuration in growing FastAPI projects often results in **Circular Import Hell**. This happens because nearly every module (Database, Security, Services) needs settings, but settings are often instantiated in `main.py`. If a module imported by `main.py` tries to import the settings instance from `main.py`, the app crashes. 
 
-```bash
-# Example: Run tests using a specific test environment file
-ENV_FILE=.env.test pytest tests/
-```
+Furthermore, manually managing `.env` file paths and ensuring type-safety for environment variables across different deployment stages (dev, test, prod) adds unnecessary cognitive load.
 
----
+## The ZCore Elegance
+ZCore solves this using a **Settings Proxy** combined with the global **IoC Container**. You simply import a global `settings` object. It remains "hollow" until an attribute is accessed, at which point it dynamically resolves the configuration from the container. This eliminates circular imports and allows for easy settings overriding during testing.
 
-## 🧠 Lazy Resolution via `SettingsProxy`
+=== "ZCore Lazy Configuration"
+        :::python
+        # Import and use anywhere - zero circular import risk
+        from zcore import settings
 
-A common issue in large applications is "circular imports" or slow startups caused by loading configurations too early. ZCore solves this through a **Lazy-Resolution Proxy**.
+        def get_db_url():
+            # Instance is resolved lazily on first access
+            return settings.DATABASE_URL
 
-```mermaid
-sequenceDiagram
-    participant Dev as Developer Code
-    participant Proxy as SettingsProxy
-    participant IoC as IoC Container
-    participant Inst as Settings Instance
+=== "FastAPI Manual Management"
+        :::python
+        # Standard approach often leads to circularity or manual passing
+        from my_app.main import settings # Risk: main imports modules, modules import main
 
-    Dev->>Proxy: Import settings
-    Note over Proxy: (No work done yet)
-    Dev->>Proxy: Access .DATABASE_URL
-    Proxy->>IoC: Check for existing settings
-    IoC-->>Proxy: Not found
-    Proxy->>Inst: Create & Register Singleton
-    Inst-->>Proxy: Return Value
-    Proxy-->>Dev: "sqlite+aiosqlite:///..."
-```
-
-!!! info "🛡️ Engineered for Efficiency"
-    The `settings` object you import is actually a "Proxy." It remains dormant until you access an attribute for the first time. At that moment, it communicates with the **IoC Container** to instantiate the settings as a global singleton.
-
----
-
-## 💻 Practical Usage
-
-We suggest importing the global `settings` proxy to access your configurations anywhere in your application.
-
-```python
-from zcore.config import settings
-
-# Safe, lazy access to your environment variables
-db_url = settings.DATABASE_URL
-is_dev = settings.ENVIRONMENT == "development"
-```
-
-### 🛠️ Overriding Settings for Testing
-If you need to change settings dynamically (for example, using an in-memory database during unit tests), you can register a custom subclass in the IoC container before the application boots:
-
-```python
-from zcore.config import ZCoreCoreSettings, initialize_settings
-
-class TestSettings(ZCoreCoreSettings):
-    DATABASE_URL: str = "sqlite+aiosqlite:///:memory:"
-    ENVIRONMENT: str = "test"
-
-# Register this as the global settings instance
-initialize_settings(TestSettings())
-```
+        # OR: Manual instantiation in every file (Expensive/Inconsistent)
+        from pydantic_settings import BaseSettings
+        class MySettings(BaseSettings):
+            DATABASE_URL: str
+        
+        settings = MySettings() # Re-reading .env every time
 
 ---
 
-## 💡 Engineering Insights
+## Boundaries & Integration
+ZCore Configuration is a transparent wrapper around the Pydantic ecosystem.
 
-!!! tip "💡 Type Safety"
-    Because ZCore uses Pydantic, your settings are strictly typed. If you define `POOL_SIZE: int` but provide `"abc"` in your `.env` file, ZCore will raise a clear validation error during startup, preventing your app from running in an unstable state.
+*   **Pydantic V2 Native:** `ZCoreCoreSettings` inherits directly from `pydantic_settings.BaseSettings`. You can use all Pydantic features like `AliasPath`, `Field` validation, and complex types (SecretStr, HttpUrl) [config.py].
+*   **Extensible:** You can easily extend the base settings by creating your own class. Once registered via `initialize_settings(my_inst)`, ZCore's global `settings` proxy will resolve to your custom implementation.
+*   **Bypass:** If you prefer not to use the global proxy, you can instantiate your own Pydantic Settings class and use it normally. ZCore's internal modules will continue to use their registered singletons without interference.
 
-!!! warning "🛡️ Production Security"
-    In a production environment, never rely on the default `SECRET_KEY`. ZCore will log a warning (or abort in strict mode) if it detects the insecure fallback key is active. Use `zc gensecret` to create a strong, unique key for your deployment.
+---
 
-!!! info "🧪 Extra Variables"
-    The `ZCoreCoreSettings` class is configured to ignore "extra" variables in your `.env` file. This allows you to keep other configuration data in the same file without causing Pydantic validation errors.
+## Under-the-Hood Spec
+
+### 1. The Settings Proxy
+The global `settings` object is an instance of `SettingsProxy` [config.py]. It implements `__getattr__`, which intercepts attribute access and calls `get_settings()`. This function attempts to resolve the settings instance from the `IoCContainer`. If not found, it instantiates the default `ZCoreCoreSettings`, registers it as a singleton, and returns it.
+
+### 2. Dynamic `.env` Resolution
+The `model_config` is configured to look for an environment variable named `ENV_FILE` [config.py]. If set (e.g., `ENV_FILE=.env.test`), ZCore will load that specific file. If not set, it defaults to the standard `.env` in the project root. This allows for seamless switching between environment configurations without code changes.
+
+### 3. DI Container Registration
+The `initialize_settings` function performs a "Double Registration" [config.py]. It registers the settings instance under its specific class type *and* under the base `ZCoreCoreSettings` type. This ensures that even if you provide a custom subclass (e.g., `MyAppSettings`), ZCore's internal components can still inject the base type and receive your custom instance.
+
+!!! info "Production Security"
+    ZCore's settings default to `ENVIRONMENT="production"`. In this mode, certain security-critical defaults (like the insecure `SECRET_KEY`) will trigger fatal errors in related modules like `zcore.security.jwt` to prevent accidental insecure deployments.
