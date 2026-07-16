@@ -39,17 +39,19 @@ extra_css:
 nav:
   - Home: index.md
   
-  - Learn (Tutorial):
-      - Overview: learn/overview.md
-      - Installation & Scaffolding: learn/installation.md
-      - "Step 1: Database Models": learn/1-db.md
-      - "Step 2: Data Schemas": learn/2-schemas.md
-      - "Step 3: Repository Layer": learn/3-repository.md
-      - "Step 4: Business Logic": learn/4-service.md
-      - "Step 5: Automated Routing": learn/5-router.md
-      - "Step 6: Domain Packaging": learn/6-plugin.md
-      - "Step 7: Framework Orchestration": learn/7-kernel.md
-      - "Step 8: Application Bootstrapping": learn/8-main.md
+  - Learn:
+      - "10-Minute Quickstart": learn/quickstart.md
+      - Tutorial:
+          - Overview: learn/overview.md
+          - Installation & Scaffolding: learn/installation.md
+          - "Step 1: Database Models": learn/1-db.md
+          - "Step 2: Data Schemas": learn/2-schemas.md
+          - "Step 3: Repository Layer": learn/3-repository.md
+          - "Step 4: Business Logic": learn/4-service.md
+          - "Step 5: Automated Routing": learn/5-router.md
+          - "Step 6: Domain Packaging": learn/6-plugin.md
+          - "Step 7: Framework Orchestration": learn/7-kernel.md
+          - "Step 8: Application Bootstrapping": learn/8-main.md
       
   - How-To Guides:
       - JWT Authentication & Scopes: how-to/auth-setup.md
