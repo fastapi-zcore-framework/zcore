@@ -127,9 +127,9 @@ class SearchEngine:
         if not restricted_set:
             return False
         
-        normalized_path = path.replace("resource.", "").lower()
+        normalized_path = path.lower()
         for restricted in restricted_set:
-            normalized_restricted = restricted.replace("resource.", "").lower()
+            normalized_restricted = restricted.lower()
             
             if normalized_path == normalized_restricted:
                 return True
@@ -351,7 +351,7 @@ class SearchEngine:
                 return date.fromisoformat(value.split("T")[0])
                 
             if python_type is datetime and isinstance(value, str):
-                return datetime.fromisoformat(value.replace("Z", "+00:00"))
+                return datetime.fromisoformat(value)
                 
             if python_type is uuid.UUID and isinstance(value, str):
                 return uuid.UUID(value)
