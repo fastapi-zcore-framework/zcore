@@ -21,7 +21,7 @@ from zcore.db.pagination import (
 )
 
 if TYPE_CHECKING:
-    from zcore.db.search import SearchRequest, SearchEngine
+    from zcore.db.search import SearchRequest
 
 ModelType = TypeVar("ModelType", bound=Base)
 CreateSchemaType = TypeVar("CreateSchemaType", bound=BaseModel)

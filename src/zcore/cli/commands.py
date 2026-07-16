@@ -87,7 +87,7 @@ def start_app(app_name: str, with_template: bool = False) -> None:
         create_file(app_dir / filename, content)
         
     print(f"\n🎉 Modular App '{app_name}' created successfully with its core Plugin wrapper!")
-    print(f"👉 REGISTER this plugin in your main.py:")
+    print("👉 REGISTER this plugin in your main.py:")
     print(f"   from {app_name}.plugin import {model_name}Plugin")
     print(f"   kernel.add_plugin({model_name}Plugin())")
 
